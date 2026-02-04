@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Tank Command</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Start Menu -->
+  <div id="start-menu">
+    <h1>TANK COMMAND</h1>
+    <p>Select Your Vehicle</p>
+    <div id="vehicle-options">
+      <button class="vehicle-btn" data-vehicle="tank">
+        <span class="vehicle-icon">&#x1F6E1;</span>
+        <span class="vehicle-name">Iron Bastion</span>
+        <span class="vehicle-desc">Heavy Battle Tank</span>
+      </button>
+      <button class="vehicle-btn" data-vehicle="warhound">
+        <span class="vehicle-icon">&#x1F916;</span>
+        <span class="vehicle-name">Warhound Titan</span>
+        <span class="vehicle-desc">Assault Walker</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Game UI -->
+  <div id="game-container"></div>
+  <div id="joystick-left" class="game-ui"></div>
+  <div id="joystick-right" class="game-ui"></div>
+  <div id="fire-button" class="game-ui">FIRE</div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

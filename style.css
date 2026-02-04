@@ -1,0 +1,167 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  touch-action: none;
+}
+
+body {
+  overflow: hidden;
+  background: #000;
+  font-family: 'Arial', sans-serif;
+}
+
+#game-container {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Start Menu */
+#start-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+#start-menu.hidden {
+  display: none;
+}
+
+#start-menu h1 {
+  color: #e94560;
+  font-size: 3rem;
+  text-shadow: 0 0 20px rgba(233, 69, 96, 0.5);
+  margin-bottom: 10px;
+  letter-spacing: 4px;
+}
+
+#start-menu p {
+  color: #eee;
+  font-size: 1.2rem;
+  margin-bottom: 40px;
+}
+
+#vehicle-options {
+  display: flex;
+  gap: 30px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 0 20px;
+}
+
+.vehicle-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(233, 69, 96, 0.5);
+  border-radius: 15px;
+  padding: 30px 40px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 180px;
+}
+
+.vehicle-btn:hover {
+  background: rgba(233, 69, 96, 0.2);
+  border-color: #e94560;
+  transform: translateY(-5px);
+  box-shadow: 0 10px 30px rgba(233, 69, 96, 0.3);
+}
+
+.vehicle-btn:active {
+  transform: translateY(0);
+}
+
+.vehicle-icon {
+  font-size: 4rem;
+  margin-bottom: 15px;
+}
+
+.vehicle-name {
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.vehicle-desc {
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+/* Hide game UI until game starts */
+.game-ui {
+  display: none;
+}
+
+.game-ui.active {
+  display: flex;
+}
+
+#joystick-left.active {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 120px;
+  height: 120px;
+  z-index: 100;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  display: block;
+}
+
+#joystick-right.active {
+  position: fixed;
+  bottom: 20px;
+  right: 140px;
+  width: 120px;
+  height: 120px;
+  z-index: 100;
+  background: rgba(255, 0, 0, 0.2);
+  border: 2px solid rgba(255, 0, 0, 0.4);
+  border-radius: 50%;
+  display: block;
+}
+
+#fire-button.active {
+  position: fixed;
+  bottom: 40px;
+  right: 20px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: rgba(255, 0, 0, 0.6);
+  border: 3px solid #fff;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-weight: bold;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#fire-button.active:active {
+  background: rgba(255, 0, 0, 0.9);
+  transform: scale(0.95);
+}
+
+/* Hide joysticks on desktop */
+@media (hover: hover) and (pointer: fine) {
+  #joystick-left.active, #joystick-right.active, #fire-button.active {
+    display: none;
+  }
+}
