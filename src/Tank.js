@@ -28,6 +28,9 @@ export class Tank {
     this.canFire = true;
     this.fireRate = 1.0; // seconds
     this.projectiles = [];
+
+    // Visual offset from physics body (tweak if tank floats/sinks)
+    this.meshOffsetY = 0;
   }
 
   async load(path) {
@@ -67,8 +70,8 @@ export class Tank {
 
         console.log('Turret found:', this.turret ? this.turret.name : 'NO');
 
-        // Position mesh - just set Y height, keep X/Z at origin
-        this.mesh.position.set(0, 1, 0);
+        // Initial position will be set by physics body after creation
+        this.mesh.position.set(0, 0, 0);
 
         this.scene.add(this.mesh);
 
@@ -87,24 +90,28 @@ export class Tank {
   createPhysicsBody(size) {
     console.log('Model size from bounds:', size);
 
-    // Position physics body to match mesh position
+    // Collider dimensions
+    const halfX = Math.max(size.x / 2, 1);
+    const halfY = Math.max(size.y / 2, 0.5);
+    const halfZ = Math.max(size.z / 2, 1);
+
+    // Spawn height: collider half-height above ground (Y=0) plus small margin
+    const spawnY = halfY + 0.1;
+
     const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(0, 1, 0)
+      .setTranslation(0, spawnY, 0)
       .setLinearDamping(2.0)
       .setAngularDamping(2.0)
       .enabledRotations(false, true, false); // Only allow Y rotation
 
     this.body = this.world.createRigidBody(rigidBodyDesc);
 
-    // Collider sized to model
-    const halfX = Math.max(size.x / 2, 1);
-    const halfY = Math.max(size.y / 2, 0.5);
-    const halfZ = Math.max(size.z / 2, 1);
-
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfZ)
       .setMass(20)
       .setFriction(0.5);
     this.world.createCollider(colliderDesc, this.body);
+
+    console.log('Tank collider halfY:', halfY, 'spawnY:', spawnY);
   }
 
   setMoveInput(x, y) {
@@ -167,8 +174,8 @@ export class Tank {
       this.body.applyTorqueImpulse({ x: 0, y: torque, z: 0 }, true);
     }
 
-    // Update mesh from physics
-    this.mesh.position.set(pos.x, pos.y, pos.z);
+    // Update mesh from physics (apply offset if tank floats/sinks)
+    this.mesh.position.set(pos.x, pos.y + this.meshOffsetY, pos.z);
     this.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
 
     // Turret rotation (independent of hull)
