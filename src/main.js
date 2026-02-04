@@ -4,6 +4,7 @@ import { Tank } from './Tank.js';
 import { Terrain } from './Terrain.js';
 import { Controls } from './Controls.js';
 import { ThirdPersonCamera } from './Camera.js';
+import { TargetManager } from './Target.js';
 
 class Game {
   constructor() {
@@ -38,13 +39,19 @@ class Game {
       this.terrain = new Terrain(this.scene, this.world);
       console.log('Terrain ready');
 
+      // Create targets
+      this.targetManager = new TargetManager(this.scene, this.world);
+      this.targetManager.spawnTargets(5);
+      console.log('Targets spawned');
+
       // Load tank
       this.tank = new Tank(this.scene, this.world);
       await this.tank.load('bastion.glb');
+      this.tank.setTargetManager(this.targetManager);
       console.log('Tank loaded');
 
-      // Camera
-      this.camera = new ThirdPersonCamera(this.tank);
+      // Camera (pass scene for terrain collision detection)
+      this.camera = new ThirdPersonCamera(this.tank, this.scene);
       console.log('Camera ready');
 
       // Controls
@@ -102,6 +109,9 @@ class Game {
 
     // Update tank
     this.tank.update(delta);
+
+    // Update targets
+    this.targetManager.update(delta);
 
     // Update camera
     this.camera.update(delta);

@@ -28,9 +28,14 @@ export class Tank {
     this.canFire = true;
     this.fireRate = 1.0; // seconds
     this.projectiles = [];
+    this.targetManager = null;
 
     // Visual offset from physics body (tweak if tank floats/sinks)
     this.meshOffsetY = 0;
+  }
+
+  setTargetManager(targetManager) {
+    this.targetManager = targetManager;
   }
 
   async load(path) {
@@ -142,7 +147,7 @@ export class Tank {
     const spawnPos = turretWorldPos.clone().add(direction.clone().multiplyScalar(1.5));
     spawnPos.y += 0.3;
 
-    const projectile = new Projectile(this.scene, this.world, spawnPos, direction.normalize());
+    const projectile = new Projectile(this.scene, this.world, spawnPos, direction.normalize(), this.targetManager);
     this.projectiles.push(projectile);
 
     // Cooldown
