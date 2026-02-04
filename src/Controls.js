@@ -15,7 +15,7 @@ export class Controls {
     this.moveJoystick = nipplejs.create({
       zone: document.getElementById('joystick-left'),
       mode: 'static',
-      position: { left: '60px', bottom: '60px' },
+      position: { left: '50%', top: '50%' },
       color: 'white',
       size: 100
     });
@@ -34,7 +34,7 @@ export class Controls {
     this.turretJoystick = nipplejs.create({
       zone: document.getElementById('joystick-right'),
       mode: 'static',
-      position: { right: '140px', bottom: '60px' },
+      position: { left: '50%', top: '50%' },
       color: 'red',
       size: 100
     });

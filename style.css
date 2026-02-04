@@ -22,6 +22,9 @@ body {
   width: 120px;
   height: 120px;
   z-index: 100;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
 }
 
 #joystick-right {
@@ -31,6 +34,9 @@ body {
   width: 120px;
   height: 120px;
   z-index: 100;
+  background: rgba(255, 0, 0, 0.2);
+  border: 2px solid rgba(255, 0, 0, 0.4);
+  border-radius: 50%;
 }
 
 #fire-button {
