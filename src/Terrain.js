@@ -35,12 +35,40 @@ export class Terrain {
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // Physics ground - position it so top surface is at y=0
-    const groundBodyDesc = RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(0, -0.5, 0);
+    // Physics ground - trimesh collider matching visual terrain
+    this.createTerrainCollider(geometry, ground.rotation);
+  }
+
+  createTerrainCollider(geometry, rotation) {
+    // Get vertices from geometry
+    const positionAttr = geometry.attributes.position;
+    const vertices = new Float32Array(positionAttr.count * 3);
+
+    // Apply rotation to transform from local to world space
+    const rotationMatrix = new THREE.Matrix4().makeRotationX(rotation.x);
+    const tempVec = new THREE.Vector3();
+
+    for (let i = 0; i < positionAttr.count; i++) {
+      tempVec.set(
+        positionAttr.getX(i),
+        positionAttr.getY(i),
+        positionAttr.getZ(i)
+      );
+      tempVec.applyMatrix4(rotationMatrix);
+
+      vertices[i * 3] = tempVec.x;
+      vertices[i * 3 + 1] = tempVec.y;
+      vertices[i * 3 + 2] = tempVec.z;
+    }
+
+    // Get indices (triangles)
+    const indices = new Uint32Array(geometry.index.array);
+
+    // Create trimesh collider
+    const groundBodyDesc = RAPIER.RigidBodyDesc.fixed();
     const groundBody = this.world.createRigidBody(groundBodyDesc);
-    const groundColliderDesc = RAPIER.ColliderDesc.cuboid(100, 0.5, 100);
-    this.world.createCollider(groundColliderDesc, groundBody);
+    const trimeshDesc = RAPIER.ColliderDesc.trimesh(vertices, indices);
+    this.world.createCollider(trimeshDesc, groundBody);
   }
 
   createObstacles() {
