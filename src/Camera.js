@@ -20,17 +20,17 @@ export class ThirdPersonCamera {
     // Smoothing
     this.currentPosition = new THREE.Vector3();
     this.currentLookAt = new THREE.Vector3();
-    this.smoothSpeed = 5;
+    this.smoothSpeed = 8; // Snappier camera response
 
     // Dynamic distance settings
-    this.minDistance = 6;
-    this.maxDistance = 12;
-    this.currentDistance = 8;
+    this.minDistance = 8;
+    this.maxDistance = 14;
+    this.currentDistance = 10;
     this.distanceSmoothSpeed = 3;
 
-    // Turret follow mode
-    this.followTurret = true;
-    this.turretFollowStrength = 0.7; // 0 = hull only, 1 = full turret follow
+    // Turret follow mode - disabled by default for better driving
+    this.followTurret = false;
+    this.turretFollowStrength = 0.5; // 0 = hull only, 1 = full turret follow
 
     // Terrain collision
     this.raycaster = new THREE.Raycaster();

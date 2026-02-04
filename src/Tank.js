@@ -105,15 +105,15 @@ export class Tank {
 
     const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(0, spawnY, 0)
-      .setLinearDamping(2.0)
-      .setAngularDamping(2.0)
+      .setLinearDamping(5.0)  // Higher damping for less drift
+      .setAngularDamping(10.0) // High angular damping to prevent spinning
       .enabledRotations(false, true, false); // Only allow Y rotation
 
     this.body = this.world.createRigidBody(rigidBodyDesc);
 
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfZ)
-      .setMass(20)
-      .setFriction(0.5);
+      .setMass(50) // Heavier for more stable feel
+      .setFriction(1.0); // Higher friction
     this.world.createCollider(colliderDesc, this.body);
 
     console.log('Tank collider halfY:', halfY, 'spawnY:', spawnY);
@@ -159,24 +159,34 @@ export class Tank {
   update(delta) {
     if (!this.mesh || !this.body) return;
 
-    // Get physics position
+    // Get physics state
     const pos = this.body.translation();
     const rot = this.body.rotation();
+    const currentVel = this.body.linvel();
 
-    // Apply movement input
+    // Direct rotation control (no momentum buildup)
+    if (Math.abs(this.moveInput.x) > 0.1) {
+      // Set angular velocity directly for precise turning
+      const turnRate = -this.moveInput.x * this.turnSpeed;
+      this.body.setAngvel({ x: 0, y: turnRate, z: 0 }, true);
+    } else {
+      // Stop rotation when not turning
+      this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
+
+    // Movement - set velocity in facing direction
     if (Math.abs(this.moveInput.y) > 0.1) {
-      // Forward/back (-Z is forward)
       const forward = new THREE.Vector3(0, 0, -1);
       forward.applyQuaternion(this.mesh.quaternion);
 
-      const force = forward.multiplyScalar(this.moveInput.y * this.moveSpeed);
-      this.body.applyImpulse({ x: force.x, y: 0, z: force.z }, true);
-    }
+      const targetSpeed = this.moveInput.y * this.moveSpeed;
+      const targetVel = forward.multiplyScalar(targetSpeed);
 
-    if (Math.abs(this.moveInput.x) > 0.1) {
-      // Turn hull
-      const torque = -this.moveInput.x * this.turnSpeed;
-      this.body.applyTorqueImpulse({ x: 0, y: torque, z: 0 }, true);
+      // Set horizontal velocity directly, preserve vertical (for gravity/terrain)
+      this.body.setLinvel({ x: targetVel.x, y: currentVel.y, z: targetVel.z }, true);
+    } else {
+      // Stop horizontal movement when not pressing, preserve vertical
+      this.body.setLinvel({ x: 0, y: currentVel.y, z: 0 }, true);
     }
 
     // Update mesh from physics (apply offset if tank floats/sinks)
