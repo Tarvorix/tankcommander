@@ -6,6 +6,7 @@ import { Terrain } from './Terrain.js';
 import { Controls } from './Controls.js';
 import { ThirdPersonCamera } from './Camera.js';
 import { TargetManager } from './Target.js';
+import { AIController } from './AIController.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -15,6 +16,8 @@ class Game {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.clock = new THREE.Clock();
     this.vehicle = null;
+    this.enemyVehicle = null;
+    this.aiController = null;
     this.selectedVehicle = null;
     this.selectedIndex = 0;
     this.previewScene = null;
@@ -225,6 +228,43 @@ class Game {
       }
       this.vehicle.setTargetManager(this.targetManager);
 
+      // Spawn AI enemy (opposite vehicle type)
+      if (this.selectedVehicle === 'warhound') {
+        this.enemyVehicle = new Tank(this.scene, this.world);
+        await this.enemyVehicle.load('bastion.glb');
+        console.log('AI Tank loaded');
+      } else {
+        this.enemyVehicle = new Warhound(this.scene, this.world);
+        await this.enemyVehicle.load('warhound.glb');
+        console.log('AI Warhound loaded');
+      }
+
+      // Position the AI enemy away from the player spawn
+      if (this.enemyVehicle.body) {
+        this.enemyVehicle.body.setTranslation({ x: 30, y: 4, z: 30 }, true);
+      }
+
+      // Wire up damage targets: player projectiles can hit enemy, enemy projectiles can hit player
+      this.vehicle.damageTargets = [this.enemyVehicle];
+      this.enemyVehicle.damageTargets = [this.vehicle];
+
+      // AI controller drives the enemy vehicle toward the player
+      this.aiController = new AIController(this.enemyVehicle, this.vehicle);
+
+      // Handle enemy death
+      this.enemyVehicle.onDeath = (vehicle) => {
+        console.log('Enemy destroyed!');
+        this.updateHealthBars();
+      };
+
+      // Handle player death
+      this.vehicle.onDeath = (vehicle) => {
+        console.log('Player destroyed!');
+        this.updateHealthBars();
+      };
+
+      console.log('AI enemy ready');
+
       // Camera (pass scene for terrain collision detection)
       this.camera = new ThirdPersonCamera(this.vehicle, this.scene);
       console.log('Camera ready');
@@ -286,6 +326,44 @@ class Game {
     }
   }
 
+  updateHealthBars() {
+    // Player health bar
+    const playerHealthBar = document.getElementById('player-health-fill');
+    const playerHealthText = document.getElementById('player-health-text');
+    if (playerHealthBar && this.vehicle) {
+      const pct = Math.max(0, this.vehicle.health / this.vehicle.maxHealth) * 100;
+      playerHealthBar.style.width = pct + '%';
+      if (pct > 50) {
+        playerHealthBar.style.background = 'linear-gradient(90deg, #00cc44, #44ff66)';
+      } else if (pct > 25) {
+        playerHealthBar.style.background = 'linear-gradient(90deg, #ccaa00, #ffcc00)';
+      } else {
+        playerHealthBar.style.background = 'linear-gradient(90deg, #cc2200, #ff4444)';
+      }
+      if (playerHealthText) {
+        playerHealthText.textContent = Math.ceil(this.vehicle.health) + ' / ' + this.vehicle.maxHealth;
+      }
+    }
+
+    // Enemy health bar
+    const enemyHealthBar = document.getElementById('enemy-health-fill');
+    const enemyHealthText = document.getElementById('enemy-health-text');
+    if (enemyHealthBar && this.enemyVehicle) {
+      const pct = Math.max(0, this.enemyVehicle.health / this.enemyVehicle.maxHealth) * 100;
+      enemyHealthBar.style.width = pct + '%';
+      if (pct > 50) {
+        enemyHealthBar.style.background = 'linear-gradient(90deg, #cc2200, #ff4444)';
+      } else if (pct > 25) {
+        enemyHealthBar.style.background = 'linear-gradient(90deg, #ccaa00, #ffcc00)';
+      } else {
+        enemyHealthBar.style.background = 'linear-gradient(90deg, #cc2200, #ff4444)';
+      }
+      if (enemyHealthText) {
+        enemyHealthText.textContent = Math.ceil(this.enemyVehicle.health) + ' / ' + this.enemyVehicle.maxHealth;
+      }
+    }
+  }
+
   animate() {
     requestAnimationFrame(() => this.animate());
 
@@ -294,14 +372,23 @@ class Game {
     // Physics step
     this.world.step();
 
-    // Update vehicle
+    // Update player vehicle
     this.vehicle.update(delta);
+
+    // Update AI enemy
+    if (this.enemyVehicle && this.enemyVehicle.isAlive()) {
+      this.aiController.update(delta);
+      this.enemyVehicle.update(delta);
+    }
 
     // Update targets
     this.targetManager.update(delta);
 
     // Update camera
     this.camera.update(delta);
+
+    // Update health bars
+    this.updateHealthBars();
 
     // Render
     this.renderer.render(this.scene, this.camera.camera);

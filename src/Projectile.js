@@ -2,10 +2,12 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 export class Projectile {
-  constructor(scene, world, position, direction, targetManager = null) {
+  constructor(scene, world, position, direction, targetManager = null, damageTargets = []) {
     this.scene = scene;
     this.world = world;
     this.targetManager = targetManager;
+    this.damageTargets = damageTargets; // vehicles that can be damaged by this projectile
+    this.damage = 10;
     this.alive = true;
     this.lifetime = 3; // seconds
     this.age = 0;
@@ -48,8 +50,8 @@ export class Projectile {
     const pos = this.body.translation();
     this.mesh.position.set(pos.x, pos.y, pos.z);
 
-    // Check for collisions with targets
-    if (this.targetManager) {
+    // Check for collisions with targets and vehicles
+    if (this.targetManager || this.damageTargets.length > 0) {
       this.checkTargetCollisions();
     }
 
@@ -74,14 +76,24 @@ export class Projectile {
       // Skip self
       if (collider.handle === this.collider.handle) return true;
 
-      // Check if we hit a target
-      if (this.targetManager.checkHit(collider.handle)) {
+      // Check if we hit a target (bullseye targets)
+      if (this.targetManager && this.targetManager.checkHit(collider.handle)) {
         this.createHitEffect(pos);
         this.destroy();
         return false; // Stop iterating
       }
 
-      // Check if we hit terrain or rocks (not the tank)
+      // Check if we hit a damageable vehicle
+      for (const vehicle of this.damageTargets) {
+        if (vehicle.isAlive() && vehicle.getColliderHandle() === collider.handle) {
+          vehicle.takeDamage(this.damage);
+          this.createHitEffect(pos);
+          this.destroy();
+          return false; // Stop iterating
+        }
+      }
+
+      // Check if we hit terrain or rocks (fixed bodies)
       const parentBody = collider.parent();
       if (parentBody && parentBody.isFixed()) {
         this.createHitEffect(pos);

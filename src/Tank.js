@@ -29,11 +29,18 @@ export class Tank {
     this.fireRate = 1.0; // seconds
     this.projectiles = [];
     this.targetManager = null;
+    this.damageTargets = []; // vehicles that projectiles can damage
 
     // Visual offset from physics body (tweak if tank floats/sinks)
     this.meshOffsetY = 0;
     this._forwardLocal = new THREE.Vector3(0, 0, -1);
     this._forwardWorld = new THREE.Vector3();
+
+    // Health
+    this.maxHealth = 50;
+    this.health = this.maxHealth;
+    this.colliderHandle = null;
+    this.onDeath = null; // callback
   }
 
   setTargetManager(targetManager) {
@@ -116,7 +123,8 @@ export class Tank {
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfZ)
       .setMass(50) // Heavier for more stable feel
       .setFriction(1.0); // Higher friction
-    this.world.createCollider(colliderDesc, this.body);
+    const collider = this.world.createCollider(colliderDesc, this.body);
+    this.colliderHandle = collider.handle;
 
     console.log('Tank collider halfY:', halfY, 'spawnY:', spawnY);
   }
@@ -149,7 +157,7 @@ export class Tank {
     const spawnPos = turretWorldPos.clone().add(direction.clone().multiplyScalar(1.5));
     spawnPos.y += 0.3;
 
-    const projectile = new Projectile(this.scene, this.world, spawnPos, direction.normalize(), this.targetManager);
+    const projectile = new Projectile(this.scene, this.world, spawnPos, direction.normalize(), this.targetManager, this.damageTargets);
     this.projectiles.push(projectile);
 
     // Cooldown
@@ -209,6 +217,22 @@ export class Tank {
       p.update(delta);
       return p.alive;
     });
+  }
+
+  takeDamage(amount) {
+    if (this.health <= 0) return;
+    this.health = Math.max(0, this.health - amount);
+    if (this.health <= 0 && this.onDeath) {
+      this.onDeath(this);
+    }
+  }
+
+  isAlive() {
+    return this.health > 0;
+  }
+
+  getColliderHandle() {
+    return this.colliderHandle;
   }
 
   getPosition() {

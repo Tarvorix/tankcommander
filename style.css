@@ -246,6 +246,82 @@ body {
   transform: scale(0.95);
 }
 
+/* Health Bars */
+#health-bars.active {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 24px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.health-bar-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.health-bar-label {
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.health-bar-track {
+  width: 160px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.health-bar-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.player-bar .health-bar-fill {
+  background: linear-gradient(90deg, #00cc44, #44ff66);
+}
+
+.enemy-bar .health-bar-fill {
+  background: linear-gradient(90deg, #cc2200, #ff4444);
+}
+
+.health-bar-text {
+  color: rgba(255, 255, 255, 0.8);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+@media (max-width: 480px) {
+  #health-bars.active {
+    gap: 12px;
+  }
+
+  .health-bar-track {
+    width: 120px;
+    height: 12px;
+  }
+
+  .health-bar-label {
+    font-size: 0.6rem;
+  }
+}
+
 /* Hide joysticks on desktop */
 @media (hover: hover) and (pointer: fine) {
   #joystick-left.active, #joystick-right.active, #fire-button.active {

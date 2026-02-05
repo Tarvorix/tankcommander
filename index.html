@@ -29,6 +29,25 @@
 
   <!-- Game UI -->
   <div id="game-container"></div>
+
+  <!-- Health Bars -->
+  <div id="health-bars" class="game-ui">
+    <div class="health-bar-container player-bar">
+      <div class="health-bar-label">YOU</div>
+      <div class="health-bar-track">
+        <div class="health-bar-fill" id="player-health-fill"></div>
+      </div>
+      <div class="health-bar-text" id="player-health-text">50 / 50</div>
+    </div>
+    <div class="health-bar-container enemy-bar">
+      <div class="health-bar-label">ENEMY</div>
+      <div class="health-bar-track">
+        <div class="health-bar-fill" id="enemy-health-fill"></div>
+      </div>
+      <div class="health-bar-text" id="enemy-health-text">50 / 50</div>
+    </div>
+  </div>
+
   <div id="joystick-left" class="game-ui"></div>
   <div id="joystick-right" class="game-ui"></div>
   <div id="fire-button" class="game-ui">FIRE</div>
