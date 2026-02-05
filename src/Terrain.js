@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 export class Terrain {
@@ -356,12 +357,15 @@ export class Terrain {
     const tempVec = new THREE.Vector3();
 
     for (let i = 0; i < 20; i++) {
-      // Pick a random base geometry and clone it for unique perturbation
+      // Pick a random base geometry and clone it for unique perturbation.
+      // Three.js polyhedron geometries are non-indexed (each triangle has its
+      // own vertices). mergeVertices() welds duplicates at shared edges into
+      // single vertices so perturbation moves them together — no gaps.
       const baseGeo = baseGeometries[Math.floor(Math.random() * baseGeometries.length)];
-      const rockGeo = baseGeo.clone();
+      let rockGeo = mergeVertices(baseGeo.clone());
 
       // Radial perturbation — scale each vertex's distance from center.
-      // This guarantees no self-intersection or gaps (stays star-convex).
+      // Stays star-convex so no self-intersection.
       const positions = rockGeo.attributes.position;
       const perturbStrength = 0.15 + Math.random() * 0.2; // 15-35% radius variation
 
@@ -374,10 +378,8 @@ export class Terrain {
 
         const dist = tempVec.length();
         if (dist > 0) {
-          // Scale distance from center by a random factor
           const scale = 1.0 + (Math.random() - 0.5) * 2 * perturbStrength;
-          const newDist = dist * scale;
-          tempVec.normalize().multiplyScalar(newDist);
+          tempVec.normalize().multiplyScalar(dist * scale);
 
           positions.setX(v, tempVec.x);
           positions.setY(v, tempVec.y);
@@ -385,6 +387,8 @@ export class Terrain {
         }
       }
 
+      // Convert back to non-indexed so flatShading computes per-face normals
+      rockGeo = rockGeo.toNonIndexed();
       rockGeo.computeVertexNormals();
 
       const rock = new THREE.Mesh(rockGeo, rockMaterial);
