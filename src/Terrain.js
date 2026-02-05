@@ -142,7 +142,44 @@ export class Terrain {
   }
 
   getTerrainHeight(worldX, worldZ) {
-    return Math.sin(worldX * 0.05) * Math.cos(worldZ * 0.05) * 2;
+    // The terrain is a PlaneGeometry(200, 200, 50, 50) rotated -PI/2 around X.
+    // Local space: X from -100 to 100, Y from -100 to 100, 51 vertices per axis.
+    // After rotation: world X = local X, world Z = -local Y.
+    // So: local X = worldX, local Y = -worldZ.
+    // Heights at grid vertices use: sin(localX * 0.05) * cos(localY * 0.05) * 2
+    //
+    // The mesh linearly interpolates between grid vertices (4 units apart).
+    // Using the raw analytical formula causes mismatch on slopes.
+    // Bilinear interpolation of grid vertex heights matches the actual rendered surface.
+
+    const localX = worldX;
+    const localY = -worldZ;
+
+    // Grid coordinates (50 segments, 51 vertices, spacing = 4 units)
+    const gridX = (localX + 100) / 4;
+    const gridY = (localY + 100) / 4;
+
+    const ix = Math.max(0, Math.min(49, Math.floor(gridX)));
+    const iy = Math.max(0, Math.min(49, Math.floor(gridY)));
+
+    const fx = gridX - ix;
+    const fy = gridY - iy;
+
+    // Height at a grid vertex
+    const h = (gx, gy) => {
+      const lx = gx * 4 - 100;
+      const ly = gy * 4 - 100;
+      return Math.sin(lx * 0.05) * Math.cos(ly * 0.05) * 2;
+    };
+
+    const h00 = h(ix, iy);
+    const h10 = h(ix + 1, iy);
+    const h01 = h(ix, iy + 1);
+    const h11 = h(ix + 1, iy + 1);
+
+    // Bilinear interpolation to match the actual mesh surface
+    return h00 * (1 - fx) * (1 - fy) + h10 * fx * (1 - fy) +
+           h01 * (1 - fx) * fy + h11 * fx * fy;
   }
 
   createSnowPatches() {
@@ -310,12 +347,13 @@ export class Terrain {
 
     for (let i = 0; i < 20; i++) {
       const rock = new THREE.Mesh(rockGeometry, rockMaterial);
-      rock.position.set(
-        (Math.random() - 0.5) * 150,
-        1,
-        (Math.random() - 0.5) * 150
-      );
-      rock.scale.setScalar(Math.random() * 1.5 + 0.5);
+      const rx = (Math.random() - 0.5) * 150;
+      const rz = (Math.random() - 0.5) * 150;
+      const rockScale = Math.random() * 1.5 + 0.5;
+      // Place rock on the terrain surface (radius ~2 * scale, sit partially embedded)
+      const terrainY = this.getTerrainHeight(rx, rz);
+      rock.position.set(rx, terrainY + rockScale, rz);
+      rock.scale.setScalar(rockScale);
       rock.rotation.set(
         Math.random() * Math.PI,
         Math.random() * Math.PI,
