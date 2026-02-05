@@ -69,23 +69,91 @@ export class Terrain {
     this.createTerrainCollider(geometry, ground.rotation);
   }
 
+  generateIrregularAlphaMap(seed) {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.createImageData(size, size);
+    const data = imageData.data;
+
+    // Simple seeded random for reproducible blob shapes
+    let s = seed;
+    const seededRandom = () => {
+      s = (s * 16807 + 0) % 2147483647;
+      return s / 2147483647;
+    };
+
+    // Generate random sinusoidal perturbations for the blob outline
+    const numOctaves = 6;
+    const perturbations = [];
+    for (let i = 0; i < numOctaves; i++) {
+      perturbations.push({
+        frequency: Math.floor(seededRandom() * 4) + 2,
+        amplitude: seededRandom() * 0.25 + 0.08,
+        phase: seededRandom() * Math.PI * 2
+      });
+    }
+
+    const cx = size / 2;
+    const cy = size / 2;
+    const baseRadius = size * 0.38;
+
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x - cx;
+        const dy = y - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx);
+
+        // Compute perturbed radius at this angle
+        let radiusMod = 0;
+        for (const p of perturbations) {
+          radiusMod += p.amplitude * Math.sin(p.frequency * angle + p.phase);
+        }
+        const effectiveRadius = baseRadius * (1 + radiusMod);
+
+        // Normalized distance (0 = center, 1 = edge of blob)
+        const t = dist / effectiveRadius;
+
+        // Smooth falloff with a soft inner region
+        let alpha;
+        if (t < 0.45) {
+          alpha = 1.0;
+        } else if (t < 1.0) {
+          const fade = (t - 0.45) / 0.55;
+          alpha = 1.0 - fade * fade * (3 - 2 * fade); // smoothstep
+        } else {
+          alpha = 0;
+        }
+
+        const idx = (y * size + x) * 4;
+        const val = Math.floor(alpha * 255);
+        data[idx] = val;
+        data[idx + 1] = val;
+        data[idx + 2] = val;
+        data[idx + 3] = 255;
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  getTerrainHeight(worldX, worldZ) {
+    return Math.sin(worldX * 0.05) * Math.cos(worldZ * 0.05) * 2;
+  }
+
   createSnowPatches() {
     const basePath = import.meta.env.BASE_URL;
     const patchCount = 25;
 
-    // Generate a radial alpha gradient texture via canvas for soft edges
-    const alphaCanvas = document.createElement('canvas');
-    alphaCanvas.width = 256;
-    alphaCanvas.height = 256;
-    const ctx = alphaCanvas.getContext('2d');
-    const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-    gradient.addColorStop(0, 'rgba(255,255,255,1)');
-    gradient.addColorStop(0.5, 'rgba(255,255,255,0.9)');
-    gradient.addColorStop(0.75, 'rgba(255,255,255,0.4)');
-    gradient.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 256, 256);
-    const alphaTexture = new THREE.CanvasTexture(alphaCanvas);
+    // Generate several irregular alpha maps for variety
+    const alphaMaps = [];
+    for (let i = 0; i < 5; i++) {
+      alphaMaps.push(this.generateIrregularAlphaMap(i * 7919 + 42));
+    }
 
     // Load snow textures
     const snowDiffuse = this.textureLoader.load(`${basePath}textures/terrain/snow_field/snow_field_aerial_col_4k.jpg`);
@@ -99,17 +167,20 @@ export class Terrain {
       texture.repeat.set(3, 3);
     });
 
-    const snowMaterial = new THREE.MeshStandardMaterial({
-      map: snowDiffuse,
-      roughnessMap: snowRoughness,
-      roughness: 1.0,
-      metalness: 0.0,
-      transparent: true,
-      alphaMap: alphaTexture,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1
+    // Create one material per alpha map variant
+    const snowMaterials = alphaMaps.map(alphaMap => {
+      return new THREE.MeshStandardMaterial({
+        map: snowDiffuse,
+        roughnessMap: snowRoughness,
+        roughness: 1.0,
+        metalness: 0.0,
+        transparent: true,
+        alphaMap: alphaMap,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
+      });
     });
 
     // Load EXR normal map for snow asynchronously
@@ -117,34 +188,52 @@ export class Terrain {
       texture.wrapS = THREE.RepeatWrapping;
       texture.wrapT = THREE.RepeatWrapping;
       texture.repeat.set(3, 3);
-      snowMaterial.normalMap = texture;
-      snowMaterial.needsUpdate = true;
+      snowMaterials.forEach(mat => {
+        mat.normalMap = texture;
+        mat.needsUpdate = true;
+      });
     });
 
-    // Use a seeded-style random for reproducible placement
-    // (Math.random is fine here since patches are decorative)
-    const patchGeometry = new THREE.CircleGeometry(1, 32);
-
     for (let i = 0; i < patchCount; i++) {
-      const patch = new THREE.Mesh(patchGeometry, snowMaterial);
-
-      // Random position across the terrain (200x200, stay within bounds)
+      const scale = Math.random() * 10 + 5;
       const x = (Math.random() - 0.5) * 180;
       const z = (Math.random() - 0.5) * 180;
+      const rotAngle = Math.random() * Math.PI * 2;
 
-      // Sample terrain height using the same formula as createGround
-      const y = Math.sin(x * 0.05) * Math.cos(z * 0.05) * 2 + 0.05;
+      // Subdivided plane so we can conform each vertex to terrain height
+      const patchGeo = new THREE.PlaneGeometry(2, 2, 16, 16);
+      const positions = patchGeo.attributes.position.array;
+      const cosR = Math.cos(rotAngle);
+      const sinR = Math.sin(rotAngle);
 
-      patch.position.set(x, y, z);
+      for (let v = 0; v < positions.length; v += 3) {
+        const lx = positions[v];
+        const ly = positions[v + 1];
 
-      // Lay flat on the ground
+        // Account for mesh rotation.z when computing world position
+        // Full transform: scale → rotateZ → rotateX(-PI/2) → translate
+        // Result: worldX = x + s*(lx*cosR - ly*sinR)
+        //         worldY = lz  (vertex Z becomes world Y)
+        //         worldZ = z - s*(lx*sinR + ly*cosR)
+        const worldX = x + scale * (lx * cosR - ly * sinR);
+        const worldZ = z - scale * (lx * sinR + ly * cosR);
+        const terrainHeight = this.getTerrainHeight(worldX, worldZ);
+
+        // Set vertex Z so it lands exactly on the terrain surface
+        // (mesh position.y = 0, scale.z = 1, so worldY = localZ directly)
+        positions[v + 2] = terrainHeight + 0.05;
+      }
+
+      patchGeo.attributes.position.needsUpdate = true;
+      patchGeo.computeVertexNormals();
+
+      // Pick a random material variant
+      const mat = snowMaterials[Math.floor(Math.random() * snowMaterials.length)];
+      const patch = new THREE.Mesh(patchGeo, mat);
+
+      patch.position.set(x, 0, z);
       patch.rotation.x = -Math.PI / 2;
-
-      // Random Y rotation for variety
-      patch.rotation.z = Math.random() * Math.PI * 2;
-
-      // Random scale between 5 and 15 units radius
-      const scale = Math.random() * 10 + 5;
+      patch.rotation.z = rotAngle;
       patch.scale.set(scale, scale, 1);
 
       patch.receiveShadow = true;
