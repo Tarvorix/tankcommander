@@ -311,12 +311,16 @@ export class Terrain {
   }
 
   createObstacles() {
-    // Base geometries to pick from for variety
+    // Base geometries — subdivision 0 keeps angular, faceted faces
+    // that read as rock rather than smooth spheres.
+    // Subdivision 1 used sparingly for slightly smoother boulders.
     const baseGeometries = [
+      new THREE.DodecahedronGeometry(2, 0),
+      new THREE.IcosahedronGeometry(2, 0),
+      new THREE.OctahedronGeometry(2, 0),
       new THREE.DodecahedronGeometry(2, 1),
-      new THREE.DodecahedronGeometry(2, 2),
-      new THREE.IcosahedronGeometry(2, 1),
-      new THREE.IcosahedronGeometry(2, 2)
+      new THREE.TetrahedronGeometry(2, 1),
+      new THREE.OctahedronGeometry(2, 1)
     ];
 
     // Load rock_wall_02 textures for boulders
@@ -360,7 +364,7 @@ export class Terrain {
       // Perturb each vertex along its normal for an organic, lumpy shape
       const positions = rockGeo.attributes.position;
       const normals = rockGeo.attributes.normal;
-      const perturbStrength = 0.3 + Math.random() * 0.4; // 0.3-0.7 displacement range
+      const perturbStrength = 0.5 + Math.random() * 0.5; // 0.5-1.0 strong displacement
 
       for (let v = 0; v < positions.count; v++) {
         tempNormal.set(
@@ -369,8 +373,9 @@ export class Terrain {
           normals.getZ(v)
         ).normalize();
 
-        // Random displacement along the normal (-perturbStrength to +perturbStrength)
-        const displacement = (Math.random() - 0.5) * 2 * perturbStrength;
+        // Random displacement along the normal — biased outward slightly
+        // so rocks stay mostly convex while gaining irregular silhouettes
+        const displacement = (Math.random() - 0.4) * 2 * perturbStrength;
 
         positions.setX(v, positions.getX(v) + tempNormal.x * displacement);
         positions.setY(v, positions.getY(v) + tempNormal.y * displacement);
@@ -383,11 +388,12 @@ export class Terrain {
       const rx = (Math.random() - 0.5) * 150;
       const rz = (Math.random() - 0.5) * 150;
 
-      // Non-uniform scale for varied proportions (flat, tall, elongated)
+      // Non-uniform scale for clearly varied proportions
+      // (flat slabs, tall pillars, elongated boulders)
       const baseScale = Math.random() * 1.5 + 0.5;
-      const scaleX = baseScale * (0.7 + Math.random() * 0.6);
-      const scaleY = baseScale * (0.5 + Math.random() * 0.7);
-      const scaleZ = baseScale * (0.7 + Math.random() * 0.6);
+      const scaleX = baseScale * (0.5 + Math.random() * 1.0);
+      const scaleY = baseScale * (0.3 + Math.random() * 0.9);
+      const scaleZ = baseScale * (0.5 + Math.random() * 1.0);
 
       // Place rock on the terrain surface, partially embedded
       const terrainY = this.getTerrainHeight(rx, rz);
