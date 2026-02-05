@@ -51,9 +51,16 @@ export class Warhound {
     this.fireRate = 0.8;
     this.projectiles = [];
     this.targetManager = null;
+    this.damageTargets = []; // vehicles that projectiles can damage
 
     // Visual offset from physics body
     this.meshOffsetY = 0;
+
+    // Health
+    this.maxHealth = 50;
+    this.health = this.maxHealth;
+    this.colliderHandle = null;
+    this.onDeath = null; // callback
   }
 
   setTargetManager(targetManager) {
@@ -149,7 +156,8 @@ export class Warhound {
     const colliderDesc = RAPIER.ColliderDesc.capsule(capsuleHalfHeight, radius)
       .setMass(80)
       .setFriction(1.0);
-    this.world.createCollider(colliderDesc, this.body);
+    const collider = this.world.createCollider(colliderDesc, this.body);
+    this.colliderHandle = collider.handle;
 
     console.log('Warhound collider totalHalfY:', totalHalfY, 'spawnY:', spawnY, 'meshOffsetY:', this.meshOffsetY);
   }
@@ -185,7 +193,7 @@ export class Warhound {
     const spawnPos = spineWorldPos.clone().add(direction.clone().multiplyScalar(3));
     spawnPos.y += 1;
 
-    const projectile = new Projectile(this.scene, this.world, spawnPos, direction.normalize(), this.targetManager);
+    const projectile = new Projectile(this.scene, this.world, spawnPos, direction.normalize(), this.targetManager, this.damageTargets);
     this.projectiles.push(projectile);
 
     setTimeout(() => {
@@ -257,6 +265,22 @@ export class Warhound {
       p.update(delta);
       return p.alive;
     });
+  }
+
+  takeDamage(amount) {
+    if (this.health <= 0) return;
+    this.health = Math.max(0, this.health - amount);
+    if (this.health <= 0 && this.onDeath) {
+      this.onDeath(this);
+    }
+  }
+
+  isAlive() {
+    return this.health > 0;
+  }
+
+  getColliderHandle() {
+    return this.colliderHandle;
   }
 
   getPosition() {
