@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 
 export class Terrain {
@@ -357,38 +356,42 @@ export class Terrain {
     const tempVec = new THREE.Vector3();
 
     for (let i = 0; i < 20; i++) {
-      // Pick a random base geometry and clone it for unique perturbation.
-      // Three.js polyhedron geometries are non-indexed (each triangle has its
-      // own vertices). mergeVertices() welds duplicates at shared edges into
-      // single vertices so perturbation moves them together — no gaps.
+      // Pick a random base geometry and clone for unique perturbation.
+      // Polyhedron geometries are non-indexed — each triangle has its own
+      // vertices, so duplicate positions exist at shared edges. We build a
+      // position-keyed map so all duplicates get the same perturbation.
       const baseGeo = baseGeometries[Math.floor(Math.random() * baseGeometries.length)];
-      let rockGeo = mergeVertices(baseGeo.clone());
+      const rockGeo = baseGeo.clone();
 
-      // Radial perturbation — scale each vertex's distance from center.
-      // Stays star-convex so no self-intersection.
       const positions = rockGeo.attributes.position;
-      const perturbStrength = 0.15 + Math.random() * 0.2; // 15-35% radius variation
+      const perturbStrength = 0.15 + Math.random() * 0.2;
+
+      // Map quantized position → random radial scale factor.
+      // All vertices at the same position get the same factor — no gaps.
+      const perturbMap = new Map();
+      const quantize = (val) => Math.round(val * 1000);
 
       for (let v = 0; v < positions.count; v++) {
-        tempVec.set(
-          positions.getX(v),
-          positions.getY(v),
-          positions.getZ(v)
-        );
+        const px = positions.getX(v);
+        const py = positions.getY(v);
+        const pz = positions.getZ(v);
+        const key = `${quantize(px)},${quantize(py)},${quantize(pz)}`;
 
+        if (!perturbMap.has(key)) {
+          perturbMap.set(key, 1.0 + (Math.random() - 0.5) * 2 * perturbStrength);
+        }
+
+        const scale = perturbMap.get(key);
+        tempVec.set(px, py, pz);
         const dist = tempVec.length();
         if (dist > 0) {
-          const scale = 1.0 + (Math.random() - 0.5) * 2 * perturbStrength;
           tempVec.normalize().multiplyScalar(dist * scale);
-
           positions.setX(v, tempVec.x);
           positions.setY(v, tempVec.y);
           positions.setZ(v, tempVec.z);
         }
       }
 
-      // Convert back to non-indexed so flatShading computes per-face normals
-      rockGeo = rockGeo.toNonIndexed();
       rockGeo.computeVertexNormals();
 
       const rock = new THREE.Mesh(rockGeo, rockMaterial);
