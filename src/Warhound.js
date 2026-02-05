@@ -151,7 +151,7 @@ export class Warhound {
       .setFriction(1.0);
     this.world.createCollider(colliderDesc, this.body);
 
-    console.log('Warhound collider halfY:', halfY, 'spawnY:', spawnY, 'meshOffsetY:', this.meshOffsetY);
+    console.log('Warhound collider totalHalfY:', totalHalfY, 'spawnY:', spawnY, 'meshOffsetY:', this.meshOffsetY);
   }
 
   setMoveInput(x, y) {
