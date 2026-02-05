@@ -10,6 +10,7 @@ export class Terrain {
     this.exrLoader = new EXRLoader();
 
     this.createGround();
+    this.createSnowPatches();
     this.createObstacles();
   }
 
@@ -66,6 +67,89 @@ export class Terrain {
 
     // Physics ground - trimesh collider matching visual terrain
     this.createTerrainCollider(geometry, ground.rotation);
+  }
+
+  createSnowPatches() {
+    const basePath = import.meta.env.BASE_URL;
+    const patchCount = 25;
+
+    // Generate a radial alpha gradient texture via canvas for soft edges
+    const alphaCanvas = document.createElement('canvas');
+    alphaCanvas.width = 256;
+    alphaCanvas.height = 256;
+    const ctx = alphaCanvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.5, 'rgba(255,255,255,0.9)');
+    gradient.addColorStop(0.75, 'rgba(255,255,255,0.4)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 256, 256);
+    const alphaTexture = new THREE.CanvasTexture(alphaCanvas);
+
+    // Load snow textures
+    const snowDiffuse = this.textureLoader.load(`${basePath}textures/terrain/snow_field/snow_field_aerial_col_4k.jpg`);
+    const snowRoughness = this.textureLoader.load(`${basePath}textures/terrain/snow_field/snow_field_aerial_rough_4k.jpg`);
+    snowDiffuse.colorSpace = THREE.SRGBColorSpace;
+
+    // Configure tiling for snow textures
+    [snowDiffuse, snowRoughness].forEach(texture => {
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(3, 3);
+    });
+
+    const snowMaterial = new THREE.MeshStandardMaterial({
+      map: snowDiffuse,
+      roughnessMap: snowRoughness,
+      roughness: 1.0,
+      metalness: 0.0,
+      transparent: true,
+      alphaMap: alphaTexture,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1
+    });
+
+    // Load EXR normal map for snow asynchronously
+    this.exrLoader.load(`${basePath}textures/terrain/snow_field/snow_field_aerial_nor_gl_4k.exr`, (texture) => {
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(3, 3);
+      snowMaterial.normalMap = texture;
+      snowMaterial.needsUpdate = true;
+    });
+
+    // Use a seeded-style random for reproducible placement
+    // (Math.random is fine here since patches are decorative)
+    const patchGeometry = new THREE.CircleGeometry(1, 32);
+
+    for (let i = 0; i < patchCount; i++) {
+      const patch = new THREE.Mesh(patchGeometry, snowMaterial);
+
+      // Random position across the terrain (200x200, stay within bounds)
+      const x = (Math.random() - 0.5) * 180;
+      const z = (Math.random() - 0.5) * 180;
+
+      // Sample terrain height using the same formula as createGround
+      const y = Math.sin(x * 0.05) * Math.cos(z * 0.05) * 2 + 0.05;
+
+      patch.position.set(x, y, z);
+
+      // Lay flat on the ground
+      patch.rotation.x = -Math.PI / 2;
+
+      // Random Y rotation for variety
+      patch.rotation.z = Math.random() * Math.PI * 2;
+
+      // Random scale between 5 and 15 units radius
+      const scale = Math.random() * 10 + 5;
+      patch.scale.set(scale, scale, 1);
+
+      patch.receiveShadow = true;
+      this.scene.add(patch);
+    }
   }
 
   createTerrainCollider(geometry, rotation) {
