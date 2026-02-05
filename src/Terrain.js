@@ -311,16 +311,14 @@ export class Terrain {
   }
 
   createObstacles() {
-    // Base geometries — subdivision 0 keeps angular, faceted faces
-    // that read as rock rather than smooth spheres.
-    // Subdivision 1 used sparingly for slightly smoother boulders.
+    // Base geometries — subdivision 1-2 gives enough faces for natural shapes.
+    // flatShading on the material provides the faceted rock look.
     const baseGeometries = [
-      new THREE.DodecahedronGeometry(2, 0),
-      new THREE.IcosahedronGeometry(2, 0),
-      new THREE.OctahedronGeometry(2, 0),
       new THREE.DodecahedronGeometry(2, 1),
-      new THREE.TetrahedronGeometry(2, 1),
-      new THREE.OctahedronGeometry(2, 1)
+      new THREE.DodecahedronGeometry(2, 2),
+      new THREE.IcosahedronGeometry(2, 1),
+      new THREE.IcosahedronGeometry(2, 2),
+      new THREE.OctahedronGeometry(2, 2)
     ];
 
     // Load rock_wall_02 textures for boulders
@@ -342,7 +340,8 @@ export class Terrain {
       map: rockDiffuseMap,
       roughnessMap: rockRoughnessMap,
       roughness: 1.0,
-      metalness: 0.0
+      metalness: 0.0,
+      flatShading: true
     });
 
     // Load EXR normal map for rocks asynchronously
@@ -354,32 +353,36 @@ export class Terrain {
       rockMaterial.needsUpdate = true;
     });
 
-    const tempNormal = new THREE.Vector3();
+    const tempVec = new THREE.Vector3();
 
     for (let i = 0; i < 20; i++) {
       // Pick a random base geometry and clone it for unique perturbation
       const baseGeo = baseGeometries[Math.floor(Math.random() * baseGeometries.length)];
       const rockGeo = baseGeo.clone();
 
-      // Perturb each vertex along its normal for an organic, lumpy shape
+      // Radial perturbation — scale each vertex's distance from center.
+      // This guarantees no self-intersection or gaps (stays star-convex).
       const positions = rockGeo.attributes.position;
-      const normals = rockGeo.attributes.normal;
-      const perturbStrength = 0.5 + Math.random() * 0.5; // 0.5-1.0 strong displacement
+      const perturbStrength = 0.15 + Math.random() * 0.2; // 15-35% radius variation
 
       for (let v = 0; v < positions.count; v++) {
-        tempNormal.set(
-          normals.getX(v),
-          normals.getY(v),
-          normals.getZ(v)
-        ).normalize();
+        tempVec.set(
+          positions.getX(v),
+          positions.getY(v),
+          positions.getZ(v)
+        );
 
-        // Random displacement along the normal — biased outward slightly
-        // so rocks stay mostly convex while gaining irregular silhouettes
-        const displacement = (Math.random() - 0.4) * 2 * perturbStrength;
+        const dist = tempVec.length();
+        if (dist > 0) {
+          // Scale distance from center by a random factor
+          const scale = 1.0 + (Math.random() - 0.5) * 2 * perturbStrength;
+          const newDist = dist * scale;
+          tempVec.normalize().multiplyScalar(newDist);
 
-        positions.setX(v, positions.getX(v) + tempNormal.x * displacement);
-        positions.setY(v, positions.getY(v) + tempNormal.y * displacement);
-        positions.setZ(v, positions.getZ(v) + tempNormal.z * displacement);
+          positions.setX(v, tempVec.x);
+          positions.setY(v, tempVec.y);
+          positions.setZ(v, tempVec.z);
+        }
       }
 
       rockGeo.computeVertexNormals();
