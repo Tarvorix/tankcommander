@@ -6,6 +6,8 @@ import { Terrain } from './Terrain.js';
 import { Controls } from './Controls.js';
 import { ThirdPersonCamera } from './Camera.js';
 import { TargetManager } from './Target.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 class Game {
   constructor() {
@@ -14,18 +16,137 @@ class Game {
     this.clock = new THREE.Clock();
     this.vehicle = null;
     this.selectedVehicle = null;
+    this.selectedIndex = 0;
+    this.previewScene = null;
+    this.previewCamera = null;
+    this.previewRenderer = null;
+    this.previewControls = null;
+    this.previewModel = null;
+    this.previewFrameId = null;
+    this.previewLoader = null;
+    this.previewLoadToken = 0;
+    this.previewContainer = document.getElementById('unit-preview');
+    this.vehicles = [
+      { id: 'tank', name: 'Iron Bastion', desc: 'Heavy Battle Tank', model: 'bastion.glb' },
+      { id: 'warhound', name: 'Warhound Titan', desc: 'Assault Walker', model: 'warhound.glb' }
+    ];
 
     this.setupMenu();
+    this.initPreview();
+    window.addEventListener('resize', () => this.onResize());
   }
 
   setupMenu() {
-    const vehicleButtons = document.querySelectorAll('.vehicle-btn');
-    vehicleButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.selectedVehicle = btn.dataset.vehicle;
-        this.startGame();
-      });
+    const prevBtn = document.getElementById('unit-prev');
+    const nextBtn = document.getElementById('unit-next');
+    const selectBtn = document.getElementById('unit-select');
+
+    prevBtn.addEventListener('click', () => this.selectIndex(this.selectedIndex - 1));
+    nextBtn.addEventListener('click', () => this.selectIndex(this.selectedIndex + 1));
+    selectBtn.addEventListener('click', () => this.startGame());
+
+    window.addEventListener('keydown', (e) => {
+      if (document.getElementById('start-menu').classList.contains('hidden')) return;
+      if (e.code === 'ArrowLeft') this.selectIndex(this.selectedIndex - 1);
+      if (e.code === 'ArrowRight') this.selectIndex(this.selectedIndex + 1);
+      if (e.code === 'Enter') this.startGame();
     });
+  }
+
+  initPreview() {
+    if (!this.previewContainer) return;
+
+    this.previewScene = new THREE.Scene();
+    this.previewCamera = new THREE.PerspectiveCamera(35, 1, 0.1, 500);
+    this.previewCamera.position.set(0, 2, 6);
+
+    this.previewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.previewRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.previewRenderer.toneMappingExposure = 1.0;
+    this.previewContainer.appendChild(this.previewRenderer.domElement);
+
+    const hemi = new THREE.HemisphereLight(0x9bc8ff, 0x3d2c1e, 0.9);
+    this.previewScene.add(hemi);
+    const key = new THREE.DirectionalLight(0xffffff, 1.2);
+    key.position.set(6, 10, 4);
+    this.previewScene.add(key);
+    const rim = new THREE.DirectionalLight(0x7ad6ff, 0.6);
+    rim.position.set(-6, 6, -6);
+    this.previewScene.add(rim);
+
+    this.previewControls = new OrbitControls(this.previewCamera, this.previewRenderer.domElement);
+    this.previewControls.enablePan = false;
+    this.previewControls.enableDamping = true;
+    this.previewControls.dampingFactor = 0.08;
+    this.previewControls.minDistance = 2;
+    this.previewControls.maxDistance = 12;
+
+    this.previewLoader = new GLTFLoader();
+    this.selectIndex(0);
+    this.previewAnimate();
+    this.onResize();
+  }
+
+  previewAnimate() {
+    this.previewFrameId = requestAnimationFrame(() => this.previewAnimate());
+    if (this.previewControls) this.previewControls.update();
+    if (this.previewRenderer && this.previewScene && this.previewCamera) {
+      this.previewRenderer.render(this.previewScene, this.previewCamera);
+    }
+  }
+
+  disposePreviewModel() {
+    if (!this.previewModel) return;
+    this.previewScene.remove(this.previewModel);
+    this.previewModel.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((mat) => mat.dispose());
+        } else if (child.material) {
+          child.material.dispose();
+        }
+      }
+    });
+    this.previewModel = null;
+  }
+
+  loadPreviewModel(modelPath) {
+    if (!this.previewLoader) return;
+    const token = ++this.previewLoadToken;
+    this.previewLoader.load(modelPath, (gltf) => {
+      if (token !== this.previewLoadToken) return;
+
+      this.disposePreviewModel();
+      this.previewModel = gltf.scene;
+
+      const box = new THREE.Box3().setFromObject(this.previewModel);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      this.previewModel.position.sub(center);
+      const minY = box.min.y - center.y;
+      this.previewModel.position.y -= minY;
+
+      this.previewScene.add(this.previewModel);
+
+      const radius = Math.max(size.x, size.y, size.z) * 0.6;
+      const distance = Math.max(radius * 3, 3.5);
+      this.previewCamera.position.set(0, radius * 1.1, distance);
+      this.previewControls.target.set(0, radius * 0.7, 0);
+      this.previewControls.update();
+    });
+  }
+
+  selectIndex(index) {
+    const max = this.vehicles.length;
+    this.selectedIndex = (index + max) % max;
+    const vehicle = this.vehicles[this.selectedIndex];
+    this.selectedVehicle = vehicle.id;
+    document.getElementById('unit-name').textContent = vehicle.name;
+    document.getElementById('unit-desc').textContent = vehicle.desc;
+    this.loadPreviewModel(vehicle.model);
   }
 
   async startGame() {
@@ -35,7 +156,29 @@ class Game {
     // Show game UI
     document.querySelectorAll('.game-ui').forEach(el => el.classList.add('active'));
 
+    this.teardownPreview();
     await this.init();
+  }
+
+  teardownPreview() {
+    if (this.previewFrameId) {
+      cancelAnimationFrame(this.previewFrameId);
+      this.previewFrameId = null;
+    }
+    this.disposePreviewModel();
+    if (this.previewControls) {
+      this.previewControls.dispose();
+      this.previewControls = null;
+    }
+    if (this.previewRenderer) {
+      this.previewRenderer.dispose();
+      if (this.previewRenderer.domElement && this.previewRenderer.domElement.parentNode) {
+        this.previewRenderer.domElement.parentNode.removeChild(this.previewRenderer.domElement);
+      }
+      this.previewRenderer = null;
+    }
+    this.previewScene = null;
+    this.previewCamera = null;
   }
 
   async init() {
@@ -90,9 +233,6 @@ class Game {
       this.controls = new Controls(this.vehicle, this.camera);
       console.log('Controls ready');
 
-      // Handle resize
-      window.addEventListener('resize', () => this.onResize());
-
       // Start game loop
       this.animate();
       console.log('Game running');
@@ -130,9 +270,20 @@ class Game {
   }
 
   onResize() {
-    this.camera.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    if (this.camera && this.camera.camera) {
+      this.camera.camera.aspect = window.innerWidth / window.innerHeight;
+      this.camera.camera.updateProjectionMatrix();
+    }
+    if (this.renderer) {
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    if (this.previewRenderer && this.previewCamera && this.previewContainer) {
+      const width = this.previewContainer.clientWidth || 1;
+      const height = this.previewContainer.clientHeight || 1;
+      this.previewRenderer.setSize(width, height, false);
+      this.previewCamera.aspect = width / height;
+      this.previewCamera.updateProjectionMatrix();
+    }
   }
 
   animate() {

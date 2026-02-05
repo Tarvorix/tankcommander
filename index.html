@@ -12,18 +12,19 @@
   <div id="start-menu">
     <h1>TANK COMMAND</h1>
     <p>Select Your Vehicle</p>
-    <div id="vehicle-options">
-      <button class="vehicle-btn" data-vehicle="tank">
-        <span class="vehicle-icon">&#x1F6E1;</span>
-        <span class="vehicle-name">Iron Bastion</span>
-        <span class="vehicle-desc">Heavy Battle Tank</span>
-      </button>
-      <button class="vehicle-btn" data-vehicle="warhound">
-        <span class="vehicle-icon">&#x1F916;</span>
-        <span class="vehicle-name">Warhound Titan</span>
-        <span class="vehicle-desc">Assault Walker</span>
-      </button>
+    <div id="unit-selector">
+      <button id="unit-prev" class="arrow-btn" type="button" aria-label="Previous unit">&#x25C0;</button>
+      <div id="unit-preview">
+        <div id="unit-preview-glow"></div>
+      </div>
+      <button id="unit-next" class="arrow-btn" type="button" aria-label="Next unit">&#x25B6;</button>
     </div>
+    <div id="unit-info">
+      <div id="unit-name">Iron Bastion</div>
+      <div id="unit-desc">Heavy Battle Tank</div>
+    </div>
+    <div id="unit-hint">Drag to rotate • Scroll/Pinch to zoom</div>
+    <button id="unit-select" type="button">Deploy</button>
   </div>
 
   <!-- Game UI -->

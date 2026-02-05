@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Rajdhani:wght@400;600&display=swap');
+
 * {
   margin: 0;
   padding: 0;
@@ -8,7 +10,7 @@
 body {
   overflow: hidden;
   background: #000;
-  font-family: 'Arial', sans-serif;
+  font-family: 'Rajdhani', sans-serif;
 }
 
 #game-container {
@@ -23,7 +25,11 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background:
+    radial-gradient(1200px 600px at 20% 10%, rgba(233, 69, 96, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 90% 20%, rgba(0, 173, 181, 0.2), transparent 60%),
+    linear-gradient(135deg, #141626 0%, #151d3b 45%, #0f3460 100%);
+  background-blend-mode: screen, screen, normal;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -38,6 +44,7 @@ body {
 #start-menu h1 {
   color: #e94560;
   font-size: 3rem;
+  font-family: 'Orbitron', sans-serif;
   text-shadow: 0 0 20px rgba(233, 69, 96, 0.5);
   margin-bottom: 10px;
   letter-spacing: 4px;
@@ -46,56 +53,136 @@ body {
 #start-menu p {
   color: #eee;
   font-size: 1.2rem;
-  margin-bottom: 40px;
+  margin-bottom: 24px;
+  letter-spacing: 1px;
 }
 
-#vehicle-options {
+#unit-selector {
   display: flex;
-  gap: 30px;
-  flex-wrap: wrap;
-  justify-content: center;
-  padding: 0 20px;
+  align-items: center;
+  gap: 18px;
+  padding: 0 20px 10px 20px;
 }
 
-.vehicle-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border: 2px solid rgba(233, 69, 96, 0.5);
-  border-radius: 15px;
-  padding: 30px 40px;
+.arrow-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid rgba(233, 69, 96, 0.6);
+  background: rgba(10, 10, 20, 0.6);
+  color: #e94560;
+  font-size: 1.2rem;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 180px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 25px rgba(233, 69, 96, 0.2);
 }
 
-.vehicle-btn:hover {
+.arrow-btn:hover {
   background: rgba(233, 69, 96, 0.2);
-  border-color: #e94560;
-  transform: translateY(-5px);
-  box-shadow: 0 10px 30px rgba(233, 69, 96, 0.3);
+  transform: translateY(-2px);
 }
 
-.vehicle-btn:active {
+.arrow-btn:active {
   transform: translateY(0);
 }
 
-.vehicle-icon {
-  font-size: 4rem;
-  margin-bottom: 15px;
+#unit-preview {
+  position: relative;
+  width: min(60vw, 520px);
+  height: min(55vh, 520px);
+  border-radius: 20px;
+  border: 2px solid rgba(233, 69, 96, 0.35);
+  background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.08), transparent 60%),
+              rgba(10, 10, 16, 0.55);
+  overflow: hidden;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
 }
 
-.vehicle-name {
+#unit-preview canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#unit-preview-glow {
+  position: absolute;
+  inset: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 173, 181, 0.3);
+  pointer-events: none;
+}
+
+#unit-info {
+  margin-top: 12px;
+  text-align: center;
+}
+
+#unit-name {
   color: #fff;
-  font-size: 1.3rem;
-  font-weight: bold;
-  margin-bottom: 8px;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: 1px;
 }
 
-.vehicle-desc {
-  color: #aaa;
+#unit-desc {
+  color: #b8c2d6;
+  font-size: 1rem;
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+}
+
+#unit-hint {
+  margin-top: 12px;
+  color: rgba(255, 255, 255, 0.7);
   font-size: 0.9rem;
+  letter-spacing: 0.6px;
+}
+
+#unit-select {
+  margin-top: 18px;
+  padding: 14px 34px;
+  border-radius: 30px;
+  border: 2px solid rgba(0, 173, 181, 0.7);
+  background: linear-gradient(135deg, rgba(0, 173, 181, 0.9), rgba(233, 69, 96, 0.8));
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#unit-select:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.4);
+}
+
+#unit-select:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 720px) {
+  #unit-selector {
+    gap: 10px;
+  }
+
+  #unit-preview {
+    width: min(72vw, 360px);
+    height: min(48vh, 360px);
+  }
+
+  #start-menu h1 {
+    font-size: 2.4rem;
+  }
+
+  #unit-name {
+    font-size: 1.3rem;
+  }
 }
 
 /* Hide game UI until game starts */
