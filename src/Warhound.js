@@ -130,7 +130,7 @@ export class Warhound {
 
     // Align rendered model feet with ground when physics collider rests on ground.
     const modelMinY = this.modelBox ? this.modelBox.min.y : 0;
-    this.meshOffsetY = -halfY - modelMinY + 0.02;
+    this.meshOffsetY = -halfY - modelMinY;
 
     // Spawn height
     const spawnY = halfY + 0.1;
