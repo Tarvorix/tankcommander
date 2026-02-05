@@ -311,8 +311,13 @@ export class Terrain {
   }
 
   createObstacles() {
-    // Add some rocks/obstacles
-    const rockGeometry = new THREE.DodecahedronGeometry(2, 1);
+    // Base geometries to pick from for variety
+    const baseGeometries = [
+      new THREE.DodecahedronGeometry(2, 1),
+      new THREE.DodecahedronGeometry(2, 2),
+      new THREE.IcosahedronGeometry(2, 1),
+      new THREE.IcosahedronGeometry(2, 2)
+    ];
 
     // Load rock_wall_02 textures for boulders
     const basePath = import.meta.env.BASE_URL;
@@ -345,15 +350,49 @@ export class Terrain {
       rockMaterial.needsUpdate = true;
     });
 
+    const tempNormal = new THREE.Vector3();
+
     for (let i = 0; i < 20; i++) {
-      const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+      // Pick a random base geometry and clone it for unique perturbation
+      const baseGeo = baseGeometries[Math.floor(Math.random() * baseGeometries.length)];
+      const rockGeo = baseGeo.clone();
+
+      // Perturb each vertex along its normal for an organic, lumpy shape
+      const positions = rockGeo.attributes.position;
+      const normals = rockGeo.attributes.normal;
+      const perturbStrength = 0.3 + Math.random() * 0.4; // 0.3-0.7 displacement range
+
+      for (let v = 0; v < positions.count; v++) {
+        tempNormal.set(
+          normals.getX(v),
+          normals.getY(v),
+          normals.getZ(v)
+        ).normalize();
+
+        // Random displacement along the normal (-perturbStrength to +perturbStrength)
+        const displacement = (Math.random() - 0.5) * 2 * perturbStrength;
+
+        positions.setX(v, positions.getX(v) + tempNormal.x * displacement);
+        positions.setY(v, positions.getY(v) + tempNormal.y * displacement);
+        positions.setZ(v, positions.getZ(v) + tempNormal.z * displacement);
+      }
+
+      rockGeo.computeVertexNormals();
+
+      const rock = new THREE.Mesh(rockGeo, rockMaterial);
       const rx = (Math.random() - 0.5) * 150;
       const rz = (Math.random() - 0.5) * 150;
-      const rockScale = Math.random() * 1.5 + 0.5;
-      // Place rock on the terrain surface (radius ~2 * scale, sit partially embedded)
+
+      // Non-uniform scale for varied proportions (flat, tall, elongated)
+      const baseScale = Math.random() * 1.5 + 0.5;
+      const scaleX = baseScale * (0.7 + Math.random() * 0.6);
+      const scaleY = baseScale * (0.5 + Math.random() * 0.7);
+      const scaleZ = baseScale * (0.7 + Math.random() * 0.6);
+
+      // Place rock on the terrain surface, partially embedded
       const terrainY = this.getTerrainHeight(rx, rz);
-      rock.position.set(rx, terrainY + rockScale, rz);
-      rock.scale.setScalar(rockScale);
+      rock.position.set(rx, terrainY + scaleY * 0.8, rz);
+      rock.scale.set(scaleX, scaleY, scaleZ);
       rock.rotation.set(
         Math.random() * Math.PI,
         Math.random() * Math.PI,
@@ -363,11 +402,12 @@ export class Terrain {
       rock.receiveShadow = true;
       this.scene.add(rock);
 
-      // Physics for rock
+      // Physics for rock - use average scale for collision sphere
+      const avgScale = (scaleX + scaleY + scaleZ) / 3;
       const bodyDesc = RAPIER.RigidBodyDesc.fixed()
         .setTranslation(rock.position.x, rock.position.y, rock.position.z);
       const body = this.world.createRigidBody(bodyDesc);
-      const colliderDesc = RAPIER.ColliderDesc.ball(rock.scale.x * 1.5);
+      const colliderDesc = RAPIER.ColliderDesc.ball(avgScale * 1.5);
       this.world.createCollider(colliderDesc, body);
     }
   }

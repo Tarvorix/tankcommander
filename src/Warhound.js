@@ -123,17 +123,20 @@ export class Warhound {
   createPhysicsBody(size) {
     console.log('Warhound model size from bounds:', size);
 
-    // Collider dimensions - Warhound is taller
-    const halfX = Math.max(size.x / 2, 1.5);
-    const halfY = Math.max(size.y / 2, 2);
-    const halfZ = Math.max(size.z / 2, 1.5);
+    // Capsule collider — the hemisphere bottom prevents the body from
+    // lifting on slopes (a flat-bottomed cuboid rests on its corner when
+    // X/Z rotations are locked, pushing the model above the terrain).
+    const radius = Math.max(Math.max(size.x, size.z) / 2, 1.5);
+    const totalHalfY = Math.max(size.y / 2, 2);
+    const capsuleHalfHeight = Math.max(totalHalfY - radius, 0.1);
 
-    // Align rendered model feet with ground when physics collider rests on ground.
+    // Align rendered model feet with ground when capsule rests on ground.
+    // Capsule bottom is at body.y - capsuleHalfHeight - radius = body.y - totalHalfY.
     const modelMinY = this.modelBox ? this.modelBox.min.y : 0;
-    this.meshOffsetY = -halfY - modelMinY + 0.02;
+    this.meshOffsetY = -totalHalfY - modelMinY;
 
-    // Spawn height
-    const spawnY = halfY + 0.1;
+    // Spawn height — capsule center needs to be totalHalfY above ground
+    const spawnY = totalHalfY + 0.1;
 
     const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(0, spawnY, 0)
@@ -143,7 +146,7 @@ export class Warhound {
 
     this.body = this.world.createRigidBody(rigidBodyDesc);
 
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfZ)
+    const colliderDesc = RAPIER.ColliderDesc.capsule(capsuleHalfHeight, radius)
       .setMass(80)
       .setFriction(1.0);
     this.world.createCollider(colliderDesc, this.body);
