@@ -210,40 +210,29 @@ body {
 #joystick-right.active {
   position: fixed;
   bottom: 20px;
-  right: 140px;
-  width: 120px;
-  height: 120px;
+  right: 20px;
+  width: 140px;
+  height: 140px;
   z-index: 100;
-  background: rgba(255, 0, 0, 0.2);
+  background: rgba(255, 0, 0, 0.15);
   border: 2px solid rgba(255, 0, 0, 0.4);
   border-radius: 50%;
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
 }
 
-#fire-button.active {
-  position: fixed;
-  bottom: 40px;
-  right: 20px;
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  background: rgba(255, 0, 0, 0.6);
-  border: 3px solid #fff;
-  color: #fff;
-  font-family: Arial, sans-serif;
-  font-weight: bold;
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
+.joystick-hint {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
-}
-
-#fire-button.active:active {
-  background: rgba(255, 0, 0, 0.9);
-  transform: scale(0.95);
 }
 
 /* Health Bars */
@@ -324,7 +313,7 @@ body {
 
 /* Hide joysticks on desktop */
 @media (hover: hover) and (pointer: fine) {
-  #joystick-left.active, #joystick-right.active, #fire-button.active {
+  #joystick-left.active, #joystick-right.active {
     display: none;
   }
 }
