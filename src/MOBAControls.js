@@ -22,10 +22,18 @@ export class MOBAControls {
     this.renderer = renderer;
     this.scene = scene;
 
+    // Navigation system (set externally after construction)
+    this.navSystem = null;
+
     // Movement target
-    this.moveTarget = null;             // {x, y, z} world position to move to
+    this.moveTarget = null;             // final {x, y, z} world position
     this.attackTarget = null;           // unit to attack-move toward
     this.isAttackMoveMode = false;      // 'A' key held
+
+    // Path following
+    this.currentPath = [];              // Array of THREE.Vector3 waypoints
+    this.currentWaypointIndex = 0;      // Which waypoint we're heading to
+    this.waypointArrivalDist = 4;       // How close before moving to next waypoint
 
     // Move indicator
     this.moveIndicator = null;
@@ -296,6 +304,8 @@ export class MOBAControls {
     if (enemy) {
       this.attackTarget = enemy;
       this.moveTarget = null;
+      this.currentPath = [];
+      this.currentWaypointIndex = 0;
       this.showMoveIndicator(enemy.getPosition(), 0xff4444); // red indicator for attack
       return;
     }
@@ -305,7 +315,32 @@ export class MOBAControls {
     if (groundPos) {
       this.moveTarget = groundPos;
       this.attackTarget = null;
+      this.computePath(groundPos);
       this.showMoveIndicator(groundPos, 0x44ff44); // green for move
+    }
+  }
+
+  /**
+   * Compute a nav mesh path from hero to target position.
+   */
+  computePath(targetPos) {
+    if (!this.hero || !this.hero.mesh) return;
+    const heroPos = this.hero.getPosition();
+
+    if (this.navSystem && this.navSystem.ready) {
+      this.currentPath = this.navSystem.findPath(heroPos, targetPos);
+      // Skip the first waypoint if it's very close to hero (starting position)
+      this.currentWaypointIndex = 0;
+      if (this.currentPath.length > 1) {
+        const firstDist = heroPos.distanceTo(this.currentPath[0]);
+        if (firstDist < this.waypointArrivalDist) {
+          this.currentWaypointIndex = 1;
+        }
+      }
+    } else {
+      // Fallback: direct path
+      this.currentPath = [targetPos.clone ? targetPos.clone() : new THREE.Vector3(targetPos.x, targetPos.y || 0, targetPos.z)];
+      this.currentWaypointIndex = 0;
     }
   }
 
@@ -378,17 +413,25 @@ export class MOBAControls {
     if (this.attackTarget) {
       if (!this.attackTarget.isAlive || !this.attackTarget.isAlive()) {
         this.attackTarget = null;
+        this.currentPath = [];
       } else {
         const targetPos = this.attackTarget.getPosition();
         const dist = heroPos.distanceTo(targetPos);
         const attackRange = this.hero.attackRange || 15;
 
         if (dist > attackRange) {
-          // Move toward attack target
-          this.driveToward(heroPos, targetPos, delta);
+          // Move toward attack target using pathfinding
+          // Recompute path periodically since the target moves
+          if (this.currentPath.length === 0 || this._attackPathTimer <= 0) {
+            this.computePath(targetPos);
+            this._attackPathTimer = 1.0; // recompute every second
+          }
+          this._attackPathTimer -= delta;
+          this.followPath(heroPos, delta);
         } else {
           // In range — stop and attack
           this.hero.setMoveInput(0, 0);
+          this.currentPath = [];
           this.aimAndFire(heroPos, targetPos, delta);
         }
         this.updateMoveIndicator(delta);
@@ -396,12 +439,22 @@ export class MOBAControls {
       }
     }
 
-    // Handle move target
-    if (this.moveTarget) {
+    // Handle move target using path waypoints
+    if (this.moveTarget && this.currentPath.length > 0) {
+      // Check if we've arrived at final destination
+      const finalDist = heroPos.distanceTo(this.moveTarget);
+      if (finalDist < 3) {
+        this.moveTarget = null;
+        this.currentPath = [];
+        this.currentWaypointIndex = 0;
+        this.hero.setMoveInput(0, 0);
+      } else {
+        this.followPath(heroPos, delta);
+      }
+    } else if (this.moveTarget) {
+      // Have a target but no path — drive direct as fallback
       const dist = heroPos.distanceTo(this.moveTarget);
-
       if (dist < 3) {
-        // Arrived
         this.moveTarget = null;
         this.hero.setMoveInput(0, 0);
       } else {
@@ -413,6 +466,37 @@ export class MOBAControls {
     }
 
     this.updateMoveIndicator(delta);
+  }
+
+  /**
+   * Follow the current path waypoints.
+   */
+  followPath(heroPos, delta) {
+    if (this.currentWaypointIndex >= this.currentPath.length) {
+      // Reached end of path
+      this.hero.setMoveInput(0, 0);
+      this.currentPath = [];
+      this.moveTarget = null;
+      return;
+    }
+
+    const waypoint = this.currentPath[this.currentWaypointIndex];
+    const dist = heroPos.distanceTo(waypoint);
+
+    if (dist < this.waypointArrivalDist) {
+      // Move to next waypoint
+      this.currentWaypointIndex++;
+      if (this.currentWaypointIndex >= this.currentPath.length) {
+        this.hero.setMoveInput(0, 0);
+        this.currentPath = [];
+        this.moveTarget = null;
+        return;
+      }
+    }
+
+    // Drive toward current waypoint
+    const currentWP = this.currentPath[this.currentWaypointIndex];
+    this.driveToward(heroPos, currentWP, delta);
   }
 
   /**

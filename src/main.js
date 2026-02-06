@@ -11,6 +11,7 @@ import { MinionWave } from './MinionWave.js';
 import { HeroTank } from './HeroTank.js';
 import { HeroTitan } from './HeroTitan.js';
 import { MOBAHeroAI } from './MOBAHeroAI.js';
+import { MOBANavSystem } from './MOBANavSystem.js';
 import { SmokeEffect } from './SmokeEffect.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -37,6 +38,7 @@ class Game {
     this.controlPoint = null;
     this.minionWave = null;
     this.towers = { blue: [], red: [] };
+    this.navSystem = null;
     this.effects = [];
 
     // Game state
@@ -318,27 +320,38 @@ class Game {
       this.updateLoading(50, 'Placing towers...');
       this.createTowers();
 
+      // Navigation mesh for pathfinding
+      this.updateLoading(55, 'Building navigation mesh...');
+      this.navSystem = new MOBANavSystem();
+      await this.navSystem.build(
+        this.mobaMap,
+        [...this.towers.blue, ...this.towers.red]
+      );
+
       // Control Point
-      this.updateLoading(55, 'Setting up control point...');
+      this.updateLoading(60, 'Setting up control point...');
       this.controlPoint = new ControlPoint(this.scene, new THREE.Vector3(0, 0, 0));
 
       // Minion Waves
-      this.updateLoading(60, 'Loading minion assets...');
+      this.updateLoading(65, 'Loading minion assets...');
       this.minionWave = new MinionWave(this.scene, this.world, this.mobaMap);
       await this.minionWave.loadAssets();
 
       // Wire up damage targets
-      this.updateLoading(70, 'Wiring up combat systems...');
+      this.updateLoading(72, 'Wiring up combat systems...');
       this.wireDamageTargets();
 
       // Enemy hero AI
-      this.updateLoading(75, 'Setting up enemy AI...');
+      this.updateLoading(78, 'Setting up enemy AI...');
       this.enemyHeroAI = new MOBAHeroAI(
         this.enemyVehicle,
         this.enemyHeroWrapper,
         this.vehicle,
         this.mobaMap
       );
+
+      // Give AI access to navigation system
+      this.enemyHeroAI.navSystem = this.navSystem;
 
       // Give enemy AI starting ability levels
       this.enemyHeroWrapper.abilitySystem.addXP(100);
@@ -348,17 +361,20 @@ class Game {
       this.setupDeathHandlers();
 
       // Camera
-      this.updateLoading(80, 'Setting up camera...');
+      this.updateLoading(85, 'Setting up camera...');
       this.mobaCamera = new MOBACamera(this.vehicle);
 
       // Controls
-      this.updateLoading(85, 'Setting up controls...');
+      this.updateLoading(90, 'Setting up controls...');
       this.mobaControls = new MOBAControls(
         this.vehicle,
         this.mobaCamera,
         this.renderer,
         this.scene
       );
+
+      // Give controls access to navigation system
+      this.mobaControls.navSystem = this.navSystem;
 
       // Wire ability callbacks to controls
       this.setupAbilityControls();
