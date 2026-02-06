@@ -66,7 +66,6 @@ export class MOBACamera {
     this._cameraOffset = new THREE.Vector3();
 
     this.setupDesktopInputs();
-    this.setupTouchInputs();
     this.updateCameraPosition(0);
   }
 
@@ -120,74 +119,57 @@ export class MOBACamera {
     });
   }
 
-  setupTouchInputs() {
-    // Two-finger: drag to pan, pinch to zoom
-    // These are on window so they also capture gestures that start on UI elements
+  /**
+   * Called by MOBAControls when a two-finger gesture begins.
+   * @param {number} centerX - center X of the two touches (screen px)
+   * @param {number} centerY - center Y of the two touches (screen px)
+   * @param {number} pinchDist - distance between the two fingers (px)
+   */
+  startPanPinch(centerX, centerY, pinchDist) {
+    this.touchPanActive = true;
+    this.touchPanStartX = centerX;
+    this.touchPanStartY = centerY;
+    this.touchPanStartOffset.copy(this.panOffset);
+    this.isLockedToHero = false;
+    this.touchPinchStartDist = pinchDist;
+    this.touchPinchStartZoom = this.targetZoom;
+  }
 
-    const getTouchCenter = (t1, t2) => ({
-      x: (t1.clientX + t2.clientX) / 2,
-      y: (t1.clientY + t2.clientY) / 2,
-    });
+  /**
+   * Called by MOBAControls on two-finger move.
+   */
+  updatePanPinch(centerX, centerY, pinchDist) {
+    if (!this.touchPanActive) return;
 
-    const getTouchDist = (t1, t2) => {
-      const dx = t1.clientX - t2.clientX;
-      const dy = t1.clientY - t2.clientY;
-      return Math.sqrt(dx * dx + dy * dy);
-    };
+    // Two-finger drag pan
+    const dx = (centerX - this.touchPanStartX) * 0.5;
+    const dy = (centerY - this.touchPanStartY) * 0.5;
+    this.panOffset.x = this.touchPanStartOffset.x - dx;
+    this.panOffset.z = this.touchPanStartOffset.z - dy;
 
-    window.addEventListener('touchstart', (e) => {
-      this.touchCount = e.touches.length;
+    // Pinch zoom
+    if (this.touchPinchStartDist > 0) {
+      const scale = this.touchPinchStartDist / pinchDist;
+      this.targetZoom = Math.max(
+        this.minZoom,
+        Math.min(this.maxZoom, this.touchPinchStartZoom * scale)
+      );
+    }
+  }
 
-      if (e.touches.length === 2) {
-        // Start two-finger pan + pinch
-        this.touchPanActive = true;
-        const center = getTouchCenter(e.touches[0], e.touches[1]);
-        this.touchPanStartX = center.x;
-        this.touchPanStartY = center.y;
-        this.touchPanStartOffset.copy(this.panOffset);
-        this.isLockedToHero = false;
+  /**
+   * Called by MOBAControls when all fingers lift.
+   */
+  endPanPinch() {
+    this.touchPanActive = false;
+  }
 
-        // Pinch zoom
-        this.touchPinchStartDist = getTouchDist(e.touches[0], e.touches[1]);
-        this.touchPinchStartZoom = this.targetZoom;
-      }
-    }, { passive: true });
-
-    window.addEventListener('touchmove', (e) => {
-      this.touchCount = e.touches.length;
-
-      if (e.touches.length === 2 && this.touchPanActive) {
-        // Two-finger drag pan
-        const center = getTouchCenter(e.touches[0], e.touches[1]);
-        const dx = (center.x - this.touchPanStartX) * 0.5;
-        const dy = (center.y - this.touchPanStartY) * 0.5;
-        this.panOffset.x = this.touchPanStartOffset.x - dx;
-        this.panOffset.z = this.touchPanStartOffset.z - dy;
-
-        // Pinch zoom
-        const dist = getTouchDist(e.touches[0], e.touches[1]);
-        if (this.touchPinchStartDist > 0) {
-          const scale = this.touchPinchStartDist / dist;
-          this.targetZoom = Math.max(
-            this.minZoom,
-            Math.min(this.maxZoom, this.touchPinchStartZoom * scale)
-          );
-        }
-      }
-    }, { passive: true });
-
-    window.addEventListener('touchend', (e) => {
-      this.touchCount = e.touches.length;
-
-      if (e.touches.length < 2) {
-        this.touchPanActive = false;
-      }
-    }, { passive: true });
-
-    window.addEventListener('touchcancel', () => {
-      this.touchPanActive = false;
-      this.touchCount = 0;
-    });
+  /**
+   * Snap camera back to hero.
+   */
+  recenter() {
+    this.isLockedToHero = true;
+    this.panOffset.set(0, 0, 0);
   }
 
   update(delta) {

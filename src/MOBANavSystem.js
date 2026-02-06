@@ -30,16 +30,17 @@ export class MOBANavSystem {
 
     // Extract positions and indices from Three.js meshes
     const [positions, indices] = getPositionsAndIndices(meshes);
+    console.log(`Nav mesh: ${meshes.length} meshes, ${positions.length / 3} vertices, ${indices.length / 3} triangles`);
 
     // Generate the nav mesh with agent-appropriate settings
     const result = generateSoloNavMesh(positions, indices, {
-      cs: 1.0,                     // cell size — 1 meter resolution
+      cs: 0.5,                     // cell size — 0.5 meter resolution (finer for tighter gaps)
       ch: 0.5,                     // cell height
       walkableSlopeAngle: 45,      // max traversable slope
-      walkableHeight: 3,           // agent height in voxels (3 * ch = 1.5m)
+      walkableHeight: 4,           // agent height in voxels (4 * ch = 2m)
       walkableClimb: 2,            // max step height in voxels
-      walkableRadius: 4,           // agent radius in voxels (4 * cs = 4m clearance around obstacles)
-      maxEdgeLen: 40,              // max edge length
+      walkableRadius: 4,           // agent radius in voxels (4 * cs = 2m clearance around obstacles)
+      maxEdgeLen: 80,              // max edge length (in voxels)
       maxSimplificationError: 1.5, // how much to simplify the mesh
       minRegionArea: 8,            // remove tiny isolated areas
       mergeRegionArea: 20,         // merge small regions
@@ -52,9 +53,10 @@ export class MOBANavSystem {
       this.navMesh = result.navMesh;
       this.navMeshQuery = new NavMeshQuery(this.navMesh);
       this.ready = true;
-      console.log('Nav mesh built successfully');
+      console.log('Nav mesh built successfully — pathfinding active');
     } else {
-      console.warn('Nav mesh generation failed, pathfinding will use direct movement');
+      console.error('Nav mesh generation FAILED:', result.error || 'unknown error');
+      console.warn('Pathfinding will fall back to direct movement');
     }
 
     // Dispose temporary geometry
@@ -127,11 +129,17 @@ export class MOBANavSystem {
     );
 
     if (result.success && result.path && result.path.length > 0) {
-      // Convert to THREE.Vector3 array
-      return result.path.map(p => new THREE.Vector3(p.x, p.y, p.z));
+      const waypoints = result.path.map(p => new THREE.Vector3(p.x, p.y, p.z));
+      console.log(`Nav path: ${waypoints.length} waypoints`);
+      return waypoints;
+    }
+
+    if (result.error) {
+      console.warn('Nav path failed:', result.error);
     }
 
     // Fallback: direct path
+    console.log('Nav path: fallback to direct');
     return [new THREE.Vector3(end.x, end.y || 0, end.z)];
   }
 

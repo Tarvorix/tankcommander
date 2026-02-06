@@ -612,14 +612,17 @@ class Game {
   setupRecenterButton() {
     const btn = document.getElementById('recenter-btn');
     if (btn && this.mobaCamera) {
-      const handler = (e) => {
-        e.preventDefault();
+      // Touchstart: recenter immediately on finger down (no waiting for click)
+      btn.addEventListener('touchstart', (e) => {
         e.stopPropagation();
-        this.mobaCamera.isLockedToHero = true;
-        this.mobaCamera.panOffset.set(0, 0, 0);
-      };
-      btn.addEventListener('touchstart', handler, { passive: false });
-      btn.addEventListener('click', handler);
+        this.mobaCamera.recenter();
+      }, { passive: true });
+
+      // Click fallback for desktop / non-touch
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.mobaCamera.recenter();
+      });
     }
   }
 
