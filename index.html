@@ -4,14 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Combat Command</title>
+  <title>Combat Command — MOBA</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- Start Menu -->
   <div id="start-menu">
     <h1>COMBAT COMMAND</h1>
-    <p>Select Your Vehicle</p>
+    <p class="subtitle">MOBA ARENA</p>
+    <p>Select Your Hero</p>
     <div id="unit-selector">
       <button id="unit-prev" class="arrow-btn" type="button" aria-label="Previous unit">&#x25C0;</button>
       <div id="unit-preview">
@@ -23,7 +24,7 @@
       <div id="unit-name">Iron Bastion</div>
       <div id="unit-desc">Heavy Battle Tank</div>
     </div>
-    <div id="unit-hint">Drag to rotate • Scroll/Pinch to zoom</div>
+    <div id="unit-hint">Drag to rotate | Scroll/Pinch to zoom</div>
     <button id="unit-select" type="button">Deploy</button>
   </div>
 
@@ -38,10 +39,12 @@
     </div>
   </div>
 
-  <!-- Game UI -->
+  <!-- Game Container -->
   <div id="game-container"></div>
 
-  <!-- Health Bars -->
+  <!-- MOBA HUD -->
+
+  <!-- Health Bars (top center) -->
   <div id="health-bars" class="game-ui">
     <div class="health-bar-container player-bar">
       <div class="health-bar-label">YOU</div>
@@ -59,10 +62,86 @@
     </div>
   </div>
 
-  <div id="joystick-left" class="game-ui"></div>
-  <div id="joystick-right" class="game-ui">
-    <div class="joystick-hint">TAP TO FIRE</div>
+  <!-- Score Display (top center, below health) -->
+  <div id="score-display" class="game-ui">
+    <div class="score-team blue-team">
+      <span class="score-label">BLUE</span>
+      <span class="score-value" id="blue-score">0</span>
+    </div>
+    <div class="score-divider">
+      <span id="cp-status">NEUTRAL</span>
+      <span class="score-goal">/ 200</span>
+    </div>
+    <div class="score-team red-team">
+      <span class="score-label">RED</span>
+      <span class="score-value" id="red-score">0</span>
+    </div>
   </div>
+
+  <!-- Ability Bar (bottom center) -->
+  <div id="ability-bar" class="game-ui">
+    <!-- Level & XP -->
+    <div id="hero-info">
+      <div id="hero-level-container">
+        <span id="hero-level-label">LVL</span>
+        <span id="hero-level">1</span>
+      </div>
+      <div id="hero-xp-track">
+        <div id="hero-xp-fill"></div>
+      </div>
+      <div id="skill-points"></div>
+    </div>
+
+    <!-- Abilities -->
+    <div id="abilities">
+      <div class="ability-slot" id="ability-q">
+        <span class="ability-key">Q</span>
+        <span class="ability-name">Shield Wall</span>
+        <div class="ability-cd" id="ability-q-cd"></div>
+        <div class="ability-level-dots" id="ability-q-level"></div>
+      </div>
+      <div class="ability-slot" id="ability-w">
+        <span class="ability-key">W</span>
+        <span class="ability-name">Siege Shot</span>
+        <div class="ability-cd" id="ability-w-cd"></div>
+        <div class="ability-level-dots" id="ability-w-level"></div>
+      </div>
+      <div class="ability-slot" id="ability-e">
+        <span class="ability-key">E</span>
+        <span class="ability-name">Fortify</span>
+        <div class="ability-cd" id="ability-e-cd"></div>
+        <div class="ability-level-dots" id="ability-e-level"></div>
+      </div>
+      <div class="ability-slot" id="ability-r">
+        <span class="ability-key">R</span>
+        <span class="ability-name">Ultimate</span>
+        <div class="ability-cd" id="ability-r-cd"></div>
+        <div class="ability-level-dots" id="ability-r-level"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Minimap (bottom right) -->
+  <div id="minimap" class="game-ui">
+    <canvas id="minimap-canvas" width="180" height="180"></canvas>
+  </div>
+
+  <!-- Game Over Overlay -->
+  <div id="game-over-overlay">
+    <div id="game-over-text">VICTORY!</div>
+    <div id="game-over-sub">Control Point Secured</div>
+  </div>
+
+  <!-- Controls hint (top right, fades out) -->
+  <div id="controls-hint" class="game-ui">
+    <div>Right-click: Move</div>
+    <div>Right-click enemy: Attack</div>
+    <div>Q/W/E/R: Abilities</div>
+    <div>Ctrl+Click ability: Level up</div>
+    <div>Space: Center camera</div>
+    <div>Scroll: Zoom</div>
+  </div>
+
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

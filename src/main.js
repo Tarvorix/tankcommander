@@ -2,16 +2,16 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Tank } from './Tank.js';
 import { Warhound } from './Warhound.js';
-import { Terrain } from './Terrain.js';
-import { Controls } from './Controls.js';
-import { ThirdPersonCamera } from './Camera.js';
-
-import { AIController } from './AIController.js';
-import { LockOnReticle } from './LockOnReticle.js';
+import { MOBAMap } from './MOBAMap.js';
+import { MOBACamera } from './MOBACamera.js';
+import { MOBAControls } from './MOBAControls.js';
+import { Tower } from './Tower.js';
+import { ControlPoint } from './ControlPoint.js';
+import { MinionWave } from './MinionWave.js';
+import { HeroTank } from './HeroTank.js';
+import { HeroTitan } from './HeroTitan.js';
+import { MOBAHeroAI } from './MOBAHeroAI.js';
 import { SmokeEffect } from './SmokeEffect.js';
-import { InfantrySquad } from './InfantrySquad.js';
-import { InfantryAI } from './InfantryAI.js';
-import { NavMeshSystem } from './NavMeshSystem.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -20,11 +20,34 @@ class Game {
     this.scene = new THREE.Scene();
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.clock = new THREE.Clock();
+
+    // Player
     this.vehicle = null;
+    this.heroWrapper = null;
+
+    // Enemy
     this.enemyVehicle = null;
-    this.aiController = null;
+    this.enemyHeroWrapper = null;
+    this.enemyHeroAI = null;
+
+    // Game systems
+    this.mobaMap = null;
+    this.mobaCamera = null;
+    this.mobaControls = null;
+    this.controlPoint = null;
+    this.minionWave = null;
+    this.towers = { blue: [], red: [] };
+    this.effects = [];
+
+    // Game state
+    this.gameOver = false;
+    this.winner = null;
+
+    // Hero selection
     this.selectedVehicle = null;
     this.selectedIndex = 0;
+
+    // Preview
     this.previewScene = null;
     this.previewCamera = null;
     this.previewRenderer = null;
@@ -33,16 +56,11 @@ class Game {
     this.previewFrameId = null;
     this.previewLoader = null;
     this.previewLoadToken = 0;
-    this.effects = [];
-    this.playerSquad = null;
-    this.enemySquad = null;
-    this.playerSquadAI = null;
-    this.enemySquadAI = null;
-    this.navMeshSystem = null;
     this.previewContainer = document.getElementById('unit-preview');
+
     this.vehicles = [
-      { id: 'tank', name: 'Iron Bastion', desc: 'Heavy Battle Tank', model: 'bastion.glb' },
-      { id: 'warhound', name: 'Warhound Titan', desc: 'Assault Walker', model: 'warhound.glb' }
+      { id: 'tank', name: 'Iron Bastion', desc: 'Heavy Battle Tank — Tanky bruiser with shields and artillery', model: 'bastion.glb' },
+      { id: 'warhound', name: 'Warhound Titan', desc: 'Assault Walker — Mobile fighter with charge and war cry', model: 'warhound.glb' }
     ];
 
     this.setupMenu();
@@ -164,14 +182,12 @@ class Game {
   }
 
   async startGame() {
-    // Hide menu, show loading overlay
     document.getElementById('start-menu').classList.add('hidden');
     document.getElementById('loading-overlay').classList.add('active');
 
     this.teardownPreview();
     await this.init();
 
-    // Hide loading overlay, show game UI
     document.getElementById('loading-overlay').classList.remove('active');
     document.querySelectorAll('.game-ui').forEach(el => el.classList.add('active'));
   }
@@ -206,10 +222,10 @@ class Game {
 
   async init() {
     try {
-      console.log('Starting game init...');
+      console.log('Starting MOBA game init...');
       this.updateLoading(0, 'Initializing renderer...');
 
-      // Renderer setup
+      // Renderer
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       this.renderer.shadowMap.enabled = true;
@@ -217,24 +233,21 @@ class Game {
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.renderer.toneMappingExposure = 1.0;
       document.getElementById('game-container').appendChild(this.renderer.domElement);
-      console.log('Renderer ready');
 
-      // Initialize Rapier physics
+      // Physics
       this.updateLoading(5, 'Initializing physics engine...');
       await RAPIER.init();
       this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-      console.log('Physics ready');
 
       // Lighting
       this.updateLoading(10, 'Setting up lighting...');
       this.setupLighting();
 
-      // Environment map for metallic PBR materials (Warhound red armor, etc.)
+      // Environment map
       const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
       pmremGenerator.compileEquirectangularShader();
       const envScene = new THREE.Scene();
       envScene.background = new THREE.Color(0x87CEEB);
-      // Add matching lights to the env scene for realistic reflections
       const envHemi = new THREE.HemisphereLight(0x87CEEB, 0x8B7355, 0.8);
       envScene.add(envHemi);
       const envSun = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -242,168 +255,126 @@ class Game {
       envScene.add(envSun);
       this.scene.environment = pmremGenerator.fromScene(envScene, 0.04).texture;
       pmremGenerator.dispose();
-      console.log('Lighting ready');
 
-      // Create terrain
-      this.updateLoading(15, 'Generating terrain...');
-      this.terrain = new Terrain(this.scene, this.world);
-      console.log('Terrain ready');
+      // MOBA Map
+      this.updateLoading(15, 'Generating MOBA map...');
+      this.mobaMap = new MOBAMap(this.scene, this.world);
 
-      // Build navmesh for infantry pathfinding (async — runs in parallel with vehicle loading)
-      this.updateLoading(20, 'Building navigation mesh...');
-      this.navMeshSystem = new NavMeshSystem();
-      const navMeshPromise = this.navMeshSystem.build(this.terrain).then(success => {
-        if (!success) console.warn('NavMesh build failed — infantry will use direct steering');
-      }).catch(err => {
-        console.warn('NavMesh build error:', err);
-      });
-
-      // Load selected vehicle
-      this.updateLoading(30, 'Loading your vehicle...');
+      // Load player hero
+      this.updateLoading(25, 'Loading your hero...');
       if (this.selectedVehicle === 'warhound') {
         this.vehicle = new Warhound(this.scene, this.world);
         await this.vehicle.load('warhound.glb');
-        console.log('Warhound loaded');
+        this.heroWrapper = new HeroTitan(this.vehicle, this.scene, this.world);
       } else {
         this.vehicle = new Tank(this.scene, this.world);
         await this.vehicle.load('bastion.glb');
-        console.log('Tank loaded');
+        this.heroWrapper = new HeroTank(this.vehicle, this.scene, this.world);
       }
-      // Spawn AI enemy (opposite vehicle type)
-      this.updateLoading(45, 'Loading enemy vehicle...');
+
+      // Position player at blue base
+      if (this.vehicle.body) {
+        this.vehicle.body.setTranslation({ x: 0, y: 4, z: -122 }, true);
+      }
+
+      // Load enemy hero (opposite type)
+      this.updateLoading(40, 'Loading enemy hero...');
       if (this.selectedVehicle === 'warhound') {
         this.enemyVehicle = new Tank(this.scene, this.world);
         await this.enemyVehicle.load('bastion.glb');
-        console.log('AI Tank loaded');
+        this.enemyHeroWrapper = new HeroTank(this.enemyVehicle, this.scene, this.world);
       } else {
         this.enemyVehicle = new Warhound(this.scene, this.world);
         await this.enemyVehicle.load('warhound.glb');
-        console.log('AI Warhound loaded');
+        this.enemyHeroWrapper = new HeroTitan(this.enemyVehicle, this.scene, this.world);
       }
 
-      // Position sides at opposite ends of the 400x400 map
-      if (this.vehicle.body) {
-        this.vehicle.body.setTranslation({ x: -170, y: 4, z: 0 }, true);
-      }
+      // Position enemy at red base
       if (this.enemyVehicle.body) {
-        this.enemyVehicle.body.setTranslation({ x: 170, y: 4, z: 0 }, true);
+        this.enemyVehicle.body.setTranslation({ x: 0, y: 4, z: 122 }, true);
+        // Face toward blue base
+        const quat = new THREE.Quaternion();
+        quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+        this.enemyVehicle.body.setRotation(
+          { x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true
+        );
       }
 
-      // --- Infantry Squads ---
-      this.updateLoading(60, 'Deploying player infantry...');
-      this.playerSquad = new InfantrySquad(this.scene, this.world, this.terrain);
-      await this.playerSquad.load();
-      this.playerSquad.setLeader(this.vehicle);
-      // Use body translation directly — mesh position hasn't synced yet (no update() call)
-      const playerBodyPos = this.vehicle.body.translation();
-      this.playerSquad.positionFormation({ x: playerBodyPos.x, y: playerBodyPos.y, z: playerBodyPos.z });
-      console.log('Player infantry squad ready');
+      // Towers
+      this.updateLoading(50, 'Placing towers...');
+      this.createTowers();
 
-      this.updateLoading(70, 'Deploying enemy infantry...');
-      this.enemySquad = new InfantrySquad(this.scene, this.world, this.terrain);
-      await this.enemySquad.load();
-      this.enemySquad.setLeader(this.enemyVehicle);
-      const enemyBodyPos = this.enemyVehicle.body.translation();
-      this.enemySquad.positionFormation({ x: enemyBodyPos.x, y: enemyBodyPos.y, z: enemyBodyPos.z });
-      console.log('Enemy infantry squad ready');
+      // Control Point
+      this.updateLoading(55, 'Setting up control point...');
+      this.controlPoint = new ControlPoint(this.scene, new THREE.Vector3(0, 0, 0));
 
-      // Wire up damage targets: vehicles + infantry can hit each other
-      this.vehicle.damageTargets = [this.enemyVehicle, ...this.enemySquad.getAllSoldiers()];
-      this.enemyVehicle.damageTargets = [this.vehicle, ...this.playerSquad.getAllSoldiers()];
-      this.playerSquad.setDamageTargets([this.enemyVehicle, ...this.enemySquad.getAllSoldiers()]);
-      this.enemySquad.setDamageTargets([this.vehicle, ...this.playerSquad.getAllSoldiers()]);
+      // Minion Waves
+      this.updateLoading(60, 'Loading minion assets...');
+      this.minionWave = new MinionWave(this.scene, this.world, this.mobaMap);
+      await this.minionWave.loadAssets();
 
-      // AI controller drives the enemy vehicle toward the player (pass scene for obstacle avoidance)
-      this.aiController = new AIController(this.enemyVehicle, this.vehicle, this.scene);
+      // Wire up damage targets
+      this.updateLoading(70, 'Wiring up combat systems...');
+      this.wireDamageTargets();
 
-      // Wait for navmesh to finish building before creating infantry AI
-      this.updateLoading(80, 'Finalizing navigation mesh...');
-      await navMeshPromise;
-
-      // Infantry AI controllers (with navmesh pathfinding)
-      this.playerSquadAI = new InfantryAI(
-        this.playerSquad,
-        () => [this.enemyVehicle, ...this.enemySquad.getAliveSoldiers()],
-        this.navMeshSystem
-      );
-      this.enemySquadAI = new InfantryAI(
-        this.enemySquad,
-        () => [this.vehicle, ...this.playerSquad.getAliveSoldiers()],
-        this.navMeshSystem
-      );
-
-      // Handle enemy vehicle death
-      this.enemyVehicle.onDeath = (vehicle) => {
-        console.log('Enemy destroyed!');
-        this.updateHealthBars();
-        const pos = vehicle.getPosition();
-        const smokeScale = (vehicle.vehicleHeight || 6) / 6;
-        this.effects.push(new SmokeEffect(this.scene, pos, smokeScale));
-      };
-
-      // Handle player vehicle death
-      this.vehicle.onDeath = (vehicle) => {
-        console.log('Player destroyed!');
-        this.updateHealthBars();
-        const pos = vehicle.getPosition();
-        const smokeScale = (vehicle.vehicleHeight || 6) / 6;
-        this.effects.push(new SmokeEffect(this.scene, pos, smokeScale));
-      };
-
-      // Handle infantry death (small smoke)
-      for (const soldier of this.playerSquad.getAllSoldiers()) {
-        soldier.onDeath = (s) => {
-          const pos = s.getPosition();
-          this.effects.push(new SmokeEffect(this.scene, pos, 0.3));
-        };
-      }
-      for (const soldier of this.enemySquad.getAllSoldiers()) {
-        soldier.onDeath = (s) => {
-          const pos = s.getPosition();
-          this.effects.push(new SmokeEffect(this.scene, pos, 0.3));
-        };
-      }
-
-      console.log('AI enemy ready');
-
-      // Camera (pass scene for terrain collision detection)
-      this.updateLoading(90, 'Setting up camera...');
-      this.camera = new ThirdPersonCamera(this.vehicle, this.scene);
-      console.log('Camera ready');
-
-      // Lock-on reticle (3D visual indicator)
-      this.lockOnReticle = new LockOnReticle(this.scene);
-
-      // Controls (now receives renderer, scene, and lockable targets for tap-to-lock)
-      this.controls = new Controls(
+      // Enemy hero AI
+      this.updateLoading(75, 'Setting up enemy AI...');
+      this.enemyHeroAI = new MOBAHeroAI(
+        this.enemyVehicle,
+        this.enemyHeroWrapper,
         this.vehicle,
-        this.camera,
-        this.renderer,
-        this.scene,
-        [this.enemyVehicle, ...this.enemySquad.getAllSoldiers()] // lockable targets
+        this.mobaMap
       );
-      this.controls.lockOnReticle = this.lockOnReticle;
-      console.log('Controls ready');
+
+      // Give enemy AI starting ability levels
+      this.enemyHeroWrapper.abilitySystem.addXP(100);
+      this.enemyHeroWrapper.abilitySystem.levelUpAbility('q');
+
+      // Handle hero deaths
+      this.setupDeathHandlers();
+
+      // Camera
+      this.updateLoading(80, 'Setting up camera...');
+      this.mobaCamera = new MOBACamera(this.vehicle);
+
+      // Controls
+      this.updateLoading(85, 'Setting up controls...');
+      this.mobaControls = new MOBAControls(
+        this.vehicle,
+        this.mobaCamera,
+        this.renderer,
+        this.scene
+      );
+
+      // Wire ability callbacks to controls
+      this.setupAbilityControls();
+
+      // Set enemy units for click targeting
+      this.updateEnemyTargetList();
+
+      // Auto-level first ability for player
+      this.heroWrapper.abilitySystem.levelUpAbility('q');
+
+      // Setup ability level-up button handlers
+      this.setupAbilityLevelUpButtons();
 
       // Start game loop
-      this.updateLoading(100, 'Launching battle...');
+      this.updateLoading(100, 'Battle begins...');
       this.animate();
-      console.log('Game running');
+      console.log('MOBA game running');
+
     } catch (error) {
       console.error('Game init failed:', error);
     }
   }
 
   setupLighting() {
-    // Hemisphere light for natural sky/ground lighting
     const hemi = new THREE.HemisphereLight(0x87CEEB, 0x8B7355, 0.6);
     this.scene.add(hemi);
 
-    // Ambient for fill
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
     this.scene.add(ambient);
 
-    // Directional (sun) — high overhead so both sides of the 400m map are lit evenly
     const sun = new THREE.DirectionalLight(0xffffff, 1.5);
     sun.position.set(0, 150, 50);
     sun.castShadow = true;
@@ -419,15 +390,135 @@ class Game {
     sun.shadow.camera.bottom = -200;
     this.scene.add(sun);
 
-    // Sky color
     this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(0x87CEEB, 100, 400);
+    this.scene.fog = new THREE.Fog(0x87CEEB, 150, 350);
+  }
+
+  createTowers() {
+    const positions = this.mobaMap.towerPositions;
+
+    for (const lane of ['left', 'mid', 'right']) {
+      for (const pos of positions.blue[lane]) {
+        const tower = new Tower(this.scene, this.world, pos, 'blue');
+        this.towers.blue.push(tower);
+      }
+    }
+
+    for (const lane of ['left', 'mid', 'right']) {
+      for (const pos of positions.red[lane]) {
+        const tower = new Tower(this.scene, this.world, pos, 'red');
+        this.towers.red.push(tower);
+      }
+    }
+  }
+
+  wireDamageTargets() {
+    const redTargets = [this.enemyVehicle, ...this.towers.red];
+    const blueTargets = [this.vehicle, ...this.towers.blue];
+
+    this.vehicle.damageTargets = [...redTargets];
+    this.enemyVehicle.damageTargets = [...blueTargets];
+
+    for (const tower of this.towers.blue) {
+      tower.setDamageTargets([this.enemyVehicle]);
+    }
+    for (const tower of this.towers.red) {
+      tower.setDamageTargets([this.vehicle]);
+    }
+
+    this.minionWave.redDamageTargets = blueTargets;
+    this.minionWave.blueDamageTargets = redTargets;
+  }
+
+  setupDeathHandlers() {
+    this.vehicle.onDeath = (vehicle) => {
+      console.log('Player hero destroyed!');
+      const pos = vehicle.getPosition();
+      const smokeScale = (vehicle.vehicleHeight || 6) / 6;
+      this.effects.push(new SmokeEffect(this.scene, pos, smokeScale));
+
+      setTimeout(() => {
+        if (this.gameOver) return;
+        vehicle.health = vehicle.maxHealth;
+        if (vehicle.body) {
+          vehicle.body.setTranslation({ x: 0, y: 4, z: -122 }, true);
+        }
+        console.log('Player hero respawned!');
+      }, 8000);
+    };
+
+    this.enemyVehicle.onDeath = (vehicle) => {
+      console.log('Enemy hero destroyed!');
+      const pos = vehicle.getPosition();
+      const smokeScale = (vehicle.vehicleHeight || 6) / 6;
+      this.effects.push(new SmokeEffect(this.scene, pos, smokeScale));
+
+      this.heroWrapper.abilitySystem.addXP(80);
+
+      setTimeout(() => {
+        if (this.gameOver) return;
+        vehicle.health = vehicle.maxHealth;
+        if (vehicle.body) {
+          vehicle.body.setTranslation({ x: 0, y: 4, z: 122 }, true);
+        }
+        console.log('Enemy hero respawned!');
+      }, 10000);
+    };
+
+    for (const tower of [...this.towers.blue, ...this.towers.red]) {
+      tower.onDeath = (t) => {
+        const pos = t.getPosition();
+        this.effects.push(new SmokeEffect(this.scene, pos, 1.5));
+        if (t.team === 'red') {
+          this.heroWrapper.abilitySystem.addXP(50);
+        }
+      };
+    }
+  }
+
+  setupAbilityControls() {
+    const abilities = this.heroWrapper.abilitySystem;
+
+    this.mobaControls.setAbilityCallback('q', (target, groundPos) => {
+      return abilities.castAbility('q', target, groundPos);
+    });
+    this.mobaControls.setAbilityCallback('w', (target, groundPos) => {
+      return abilities.castAbility('w', target, groundPos);
+    });
+    this.mobaControls.setAbilityCallback('e', (target, groundPos) => {
+      return abilities.castAbility('e', target, groundPos);
+    });
+    this.mobaControls.setAbilityCallback('r', (target, groundPos) => {
+      return abilities.castAbility('r', target, groundPos);
+    });
+  }
+
+  setupAbilityLevelUpButtons() {
+    for (const slot of ['q', 'w', 'e', 'r']) {
+      const btn = document.getElementById(`ability-${slot}`);
+      if (btn) {
+        // Ctrl+click to level up ability
+        btn.addEventListener('click', (e) => {
+          if (e.ctrlKey || e.metaKey) {
+            this.heroWrapper.abilitySystem.levelUpAbility(slot);
+          } else {
+            // Cast ability
+            this.mobaControls.triggerAbility(slot);
+          }
+        });
+      }
+    }
+  }
+
+  updateEnemyTargetList() {
+    const enemies = [this.enemyVehicle, ...this.towers.red];
+    this.mobaControls.setEnemyUnits(enemies);
   }
 
   onResize() {
-    if (this.camera && this.camera.camera) {
-      this.camera.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.camera.updateProjectionMatrix();
+    if (this.mobaCamera && this.mobaCamera.camera) {
+      this.mobaCamera.camera.aspect = window.innerWidth / window.innerHeight;
+      this.mobaCamera.camera.updateProjectionMatrix();
     }
     if (this.renderer) {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -441,8 +532,8 @@ class Game {
     }
   }
 
-  updateHealthBars() {
-    // Player health bar
+  updateHUD() {
+    // Player health
     const playerHealthBar = document.getElementById('player-health-fill');
     const playerHealthText = document.getElementById('player-health-text');
     if (playerHealthBar && this.vehicle) {
@@ -460,7 +551,7 @@ class Game {
       }
     }
 
-    // Enemy health bar
+    // Enemy health
     const enemyHealthBar = document.getElementById('enemy-health-fill');
     const enemyHealthText = document.getElementById('enemy-health-text');
     if (enemyHealthBar && this.enemyVehicle) {
@@ -477,40 +568,271 @@ class Game {
         enemyHealthText.textContent = Math.ceil(this.enemyVehicle.health) + ' / ' + this.enemyVehicle.maxHealth;
       }
     }
+
+    // Ability cooldowns
+    for (const slot of ['q', 'w', 'e', 'r']) {
+      const info = this.heroWrapper.abilitySystem.getAbilityInfo(slot);
+      const btn = document.getElementById(`ability-${slot}`);
+      const cdOverlay = document.getElementById(`ability-${slot}-cd`);
+      const levelDots = document.getElementById(`ability-${slot}-level`);
+
+      if (btn && info) {
+        if (info.cooldown > 0) {
+          btn.classList.add('on-cooldown');
+          if (cdOverlay) {
+            cdOverlay.textContent = Math.ceil(info.cooldown);
+            cdOverlay.style.display = 'flex';
+          }
+        } else {
+          btn.classList.remove('on-cooldown');
+          if (cdOverlay) cdOverlay.style.display = 'none';
+        }
+
+        if (info.level <= 0) {
+          btn.classList.add('not-learned');
+        } else {
+          btn.classList.remove('not-learned');
+        }
+
+        if (info.canLevelUp) {
+          btn.classList.add('can-level-up');
+        } else {
+          btn.classList.remove('can-level-up');
+        }
+
+        if (levelDots) {
+          levelDots.innerHTML = '';
+          for (let i = 0; i < info.maxLevel; i++) {
+            const dot = document.createElement('span');
+            dot.className = i < info.level ? 'level-dot filled' : 'level-dot';
+            levelDots.appendChild(dot);
+          }
+        }
+      }
+    }
+
+    // Level & XP
+    const levelEl = document.getElementById('hero-level');
+    const xpEl = document.getElementById('hero-xp-fill');
+    if (levelEl) levelEl.textContent = this.heroWrapper.abilitySystem.level;
+    if (xpEl) {
+      const as = this.heroWrapper.abilitySystem;
+      const xpNeeded = as.xpToLevel[as.level] || 999;
+      const pct = Math.min(100, (as.xp / xpNeeded) * 100);
+      xpEl.style.width = pct + '%';
+    }
+
+    // Skill points
+    const spEl = document.getElementById('skill-points');
+    if (spEl) {
+      const sp = this.heroWrapper.abilitySystem.skillPoints;
+      spEl.textContent = sp > 0 ? `${sp} Skill Point${sp > 1 ? 's' : ''}` : '';
+      spEl.style.display = sp > 0 ? 'block' : 'none';
+    }
+
+    // Control point scores
+    const blueScoreEl = document.getElementById('blue-score');
+    const redScoreEl = document.getElementById('red-score');
+    const cpStatusEl = document.getElementById('cp-status');
+    if (blueScoreEl) blueScoreEl.textContent = Math.floor(this.controlPoint.blueScore);
+    if (redScoreEl) redScoreEl.textContent = Math.floor(this.controlPoint.redScore);
+    if (cpStatusEl) {
+      if (this.controlPoint.isContested) {
+        cpStatusEl.textContent = 'CONTESTED';
+        cpStatusEl.style.color = '#ff8800';
+      } else if (this.controlPoint.controllingTeam === 'blue') {
+        cpStatusEl.textContent = 'BLUE CONTROLS';
+        cpStatusEl.style.color = '#4488ff';
+      } else if (this.controlPoint.controllingTeam === 'red') {
+        cpStatusEl.textContent = 'RED CONTROLS';
+        cpStatusEl.style.color = '#ff4444';
+      } else {
+        cpStatusEl.textContent = 'NEUTRAL';
+        cpStatusEl.style.color = '#ffdd44';
+      }
+    }
+
+    // Minimap
+    this.updateMinimap();
+  }
+
+  updateMinimap() {
+    const canvas = document.getElementById('minimap-canvas');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    const mapSize = 300;
+    const scale = size / mapSize;
+
+    const toMM = (x, z) => ({
+      x: (x + mapSize / 2) * scale,
+      y: (z + mapSize / 2) * scale,
+    });
+
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, size, size);
+
+    // Lanes
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 2;
+    for (const [, waypoints] of Object.entries(this.mobaMap.laneWaypoints)) {
+      ctx.beginPath();
+      for (let i = 0; i < waypoints.length; i++) {
+        const p = toMM(waypoints[i].x, waypoints[i].z);
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+
+    // Center point
+    const cp = toMM(0, 0);
+    ctx.fillStyle = this.controlPoint.controllingTeam === 'blue' ? '#4488ff' :
+                    this.controlPoint.controllingTeam === 'red' ? '#ff4444' : '#ffdd44';
+    ctx.beginPath();
+    ctx.arc(cp.x, cp.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bases
+    const bb = toMM(0, -130);
+    ctx.fillStyle = '#2244aa';
+    ctx.fillRect(bb.x - 5, bb.y - 5, 10, 10);
+    const rb = toMM(0, 130);
+    ctx.fillStyle = '#aa2222';
+    ctx.fillRect(rb.x - 5, rb.y - 5, 10, 10);
+
+    // Towers
+    for (const tower of this.towers.blue) {
+      if (!tower.alive) continue;
+      const tp = toMM(tower.position.x, tower.position.z);
+      ctx.fillStyle = '#4488ff';
+      ctx.fillRect(tp.x - 3, tp.y - 3, 6, 6);
+    }
+    for (const tower of this.towers.red) {
+      if (!tower.alive) continue;
+      const tp = toMM(tower.position.x, tower.position.z);
+      ctx.fillStyle = '#ff4444';
+      ctx.fillRect(tp.x - 3, tp.y - 3, 6, 6);
+    }
+
+    // Minions
+    for (const m of this.minionWave.blueMinions) {
+      if (!m.isAlive()) continue;
+      const pos = m.getPosition();
+      const mp = toMM(pos.x, pos.z);
+      ctx.fillStyle = '#6699ff';
+      ctx.fillRect(mp.x - 1, mp.y - 1, 2, 2);
+    }
+    for (const m of this.minionWave.redMinions) {
+      if (!m.isAlive()) continue;
+      const pos = m.getPosition();
+      const mp = toMM(pos.x, pos.z);
+      ctx.fillStyle = '#ff6666';
+      ctx.fillRect(mp.x - 1, mp.y - 1, 2, 2);
+    }
+
+    // Player hero
+    if (this.vehicle && this.vehicle.isAlive()) {
+      const heroPos = this.vehicle.getPosition();
+      const hp = toMM(heroPos.x, heroPos.z);
+      ctx.fillStyle = '#44ffaa';
+      ctx.beginPath();
+      ctx.arc(hp.x, hp.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Enemy hero
+    if (this.enemyVehicle && this.enemyVehicle.isAlive()) {
+      const enemyPos = this.enemyVehicle.getPosition();
+      const ep = toMM(enemyPos.x, enemyPos.z);
+      ctx.fillStyle = '#ff4466';
+      ctx.beginPath();
+      ctx.arc(ep.x, ep.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  showGameOver(winner) {
+    this.gameOver = true;
+    this.winner = winner;
+
+    const overlay = document.getElementById('game-over-overlay');
+    const text = document.getElementById('game-over-text');
+    if (overlay) {
+      overlay.style.display = 'flex';
+      if (text) {
+        text.textContent = winner === 'blue' ? 'VICTORY!' : 'DEFEAT!';
+        text.style.color = winner === 'blue' ? '#44ffaa' : '#ff4444';
+      }
+    }
   }
 
   animate() {
     requestAnimationFrame(() => this.animate());
 
-    const delta = this.clock.getDelta();
+    const delta = Math.min(this.clock.getDelta(), 0.05);
 
-    // Physics step
+    if (this.gameOver) {
+      this.mobaCamera.update(delta);
+      this.renderer.render(this.scene, this.mobaCamera.camera);
+      return;
+    }
+
+    // Physics
     this.world.step();
 
-    // Update player vehicle
+    // Player hero
     this.vehicle.update(delta);
+    this.heroWrapper.update(delta);
+    this.mobaControls.update(delta);
 
-    // Update AI enemy
+    // Enemy hero
     if (this.enemyVehicle && this.enemyVehicle.isAlive()) {
-      this.aiController.update(delta);
+      this.enemyHeroAI.update(delta);
       this.enemyVehicle.update(delta);
+      this.enemyHeroWrapper.update(delta);
     }
 
-    // Update infantry squads
-    if (this.playerSquadAI) this.playerSquadAI.update(delta);
-    if (this.playerSquad) this.playerSquad.update(delta);
-    if (this.enemySquadAI) this.enemySquadAI.update(delta);
-    if (this.enemySquad) this.enemySquad.update(delta);
-
-    // Update lock-on state and reticle
-    if (this.controls) {
-      this.controls.updateLock();
-    }
-    if (this.lockOnReticle) {
-      this.lockOnReticle.update(delta, this.camera);
+    // Towers
+    for (const tower of [...this.towers.blue, ...this.towers.red]) {
+      tower.update(delta);
     }
 
-    // Update visual effects
+    // Minions
+    this.minionWave.update(delta);
+
+    // Dynamic targets
+    this.updateDynamicTargets();
+
+    // Control point
+    const blueUnits = [
+      this.vehicle,
+      ...this.minionWave.getAliveMinions('blue'),
+    ];
+    const redUnits = [
+      this.enemyVehicle,
+      ...this.minionWave.getAliveMinions('red'),
+    ];
+    const cpResult = this.controlPoint.update(delta, blueUnits, redUnits);
+
+    if (cpResult.winner) {
+      this.showGameOver(cpResult.winner);
+    }
+
+    // XP
+    this.checkMinionKillXP();
+
+    // Map animations
+    this.mobaMap.update(delta);
+
+    // Effects
     this.effects = this.effects.filter(effect => {
       effect.update(delta);
       if (!effect.alive) {
@@ -520,14 +842,103 @@ class Game {
       return true;
     });
 
-    // Update camera
-    this.camera.update(delta);
+    // Camera
+    this.mobaCamera.update(delta);
 
-    // Update health bars
-    this.updateHealthBars();
+    // HUD
+    this.updateHUD();
+
+    // Base healing
+    this.handleBaseHealing(delta);
 
     // Render
-    this.renderer.render(this.scene, this.camera.camera);
+    this.renderer.render(this.scene, this.mobaCamera.camera);
+  }
+
+  updateDynamicTargets() {
+    const aliveRedMinions = this.minionWave.getAliveMinions('red');
+    const aliveBlueMinions = this.minionWave.getAliveMinions('blue');
+
+    this.vehicle.damageTargets = [
+      this.enemyVehicle,
+      ...this.towers.red.filter(t => t.alive),
+      ...aliveRedMinions,
+    ];
+
+    this.enemyVehicle.damageTargets = [
+      this.vehicle,
+      ...this.towers.blue.filter(t => t.alive),
+      ...aliveBlueMinions,
+    ];
+
+    for (const tower of this.towers.blue) {
+      if (!tower.alive) continue;
+      tower.setDamageTargets([this.enemyVehicle, ...aliveRedMinions]);
+    }
+    for (const tower of this.towers.red) {
+      if (!tower.alive) continue;
+      tower.setDamageTargets([this.vehicle, ...aliveBlueMinions]);
+    }
+
+    this.minionWave.blueDamageTargets = [this.enemyVehicle, ...this.towers.red.filter(t => t.alive)];
+    this.minionWave.redDamageTargets = [this.vehicle, ...this.towers.blue.filter(t => t.alive)];
+
+    this.mobaControls.setEnemyUnits([
+      this.enemyVehicle,
+      ...this.towers.red.filter(t => t.alive),
+      ...aliveRedMinions,
+    ]);
+  }
+
+  checkMinionKillXP() {
+    for (const minion of this.minionWave.redMinions) {
+      if (!minion.isAlive() && !minion._xpAwarded) {
+        minion._xpAwarded = true;
+        const heroPos = this.vehicle.getPosition();
+        const minionPos = minion.getPosition();
+        if (heroPos.distanceTo(minionPos) < 30) {
+          this.heroWrapper.abilitySystem.addXP(minion.xpValue || 15);
+        }
+      }
+    }
+
+    for (const minion of this.minionWave.blueMinions) {
+      if (!minion.isAlive() && !minion._xpAwarded) {
+        minion._xpAwarded = true;
+        const enemyPos = this.enemyVehicle.getPosition();
+        const minionPos = minion.getPosition();
+        if (enemyPos.distanceTo(minionPos) < 30) {
+          this.enemyHeroWrapper.abilitySystem.addXP(minion.xpValue || 15);
+        }
+      }
+    }
+  }
+
+  handleBaseHealing(delta) {
+    const blueBase = this.mobaMap.blueBasePos;
+    const redBase = this.mobaMap.redBasePos;
+    const healRadius = 20;
+    const healRate = 8;
+
+    if (this.vehicle.isAlive()) {
+      const pos = this.vehicle.getPosition();
+      if (pos.distanceTo(blueBase) < healRadius) {
+        this.vehicle.health = Math.min(
+          this.vehicle.maxHealth,
+          this.vehicle.health + healRate * delta
+        );
+      }
+    }
+
+    if (this.enemyVehicle.isAlive()) {
+      const pos = this.enemyVehicle.getPosition();
+      if (pos.distanceTo(redBase) < healRadius) {
+        this.enemyVehicle.health = Math.min(
+          this.enemyVehicle.maxHealth,
+          this.enemyVehicle.health + healRate * delta
+        );
+      }
+    }
   }
 }
 
