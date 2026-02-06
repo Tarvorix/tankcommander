@@ -272,9 +272,18 @@ class Game {
         this.heroWrapper = new HeroTank(this.vehicle, this.scene, this.world);
       }
 
-      // Position player at blue base
+      // Position player at blue base — face toward center
       if (this.vehicle.body) {
         this.vehicle.body.setTranslation({ x: 0, y: 4, z: -122 }, true);
+        // Tank forward is -Z, needs to face +Z (toward center) → rotate 180°
+        // Warhound forward is +Z, already faces center → no rotation needed
+        if (this.selectedVehicle === 'tank') {
+          const pquat = new THREE.Quaternion();
+          pquat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+          this.vehicle.body.setRotation(
+            { x: pquat.x, y: pquat.y, z: pquat.z, w: pquat.w }, true
+          );
+        }
       }
 
       // Load enemy hero (opposite type)
@@ -289,15 +298,20 @@ class Game {
         this.enemyHeroWrapper = new HeroTitan(this.enemyVehicle, this.scene, this.world);
       }
 
-      // Position enemy at red base
+      // Position enemy at red base — face toward center
       if (this.enemyVehicle.body) {
         this.enemyVehicle.body.setTranslation({ x: 0, y: 4, z: 122 }, true);
-        // Face toward blue base
-        const quat = new THREE.Quaternion();
-        quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-        this.enemyVehicle.body.setRotation(
-          { x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true
-        );
+        // Enemy Warhound (forward +Z) at z=+122 needs 180° to face -Z (toward center)
+        // Enemy Tank (forward -Z) at z=+122 already faces -Z (toward center)
+        if (this.selectedVehicle === 'tank') {
+          // Enemy is Warhound — rotate 180°
+          const eqaut = new THREE.Quaternion();
+          eqaut.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+          this.enemyVehicle.body.setRotation(
+            { x: eqaut.x, y: eqaut.y, z: eqaut.z, w: eqaut.w }, true
+          );
+        }
+        // If player chose warhound, enemy is Tank which already faces -Z (correct)
       }
 
       // Towers
@@ -445,6 +459,14 @@ class Game {
         vehicle.health = vehicle.maxHealth;
         if (vehicle.body) {
           vehicle.body.setTranslation({ x: 0, y: 4, z: -122 }, true);
+          // Re-orient toward center on respawn
+          if (this.selectedVehicle === 'tank') {
+            const rq = new THREE.Quaternion();
+            rq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+            vehicle.body.setRotation({ x: rq.x, y: rq.y, z: rq.z, w: rq.w }, true);
+          } else {
+            vehicle.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+          }
         }
         console.log('Player hero respawned!');
       }, 8000);
@@ -463,6 +485,16 @@ class Game {
         vehicle.health = vehicle.maxHealth;
         if (vehicle.body) {
           vehicle.body.setTranslation({ x: 0, y: 4, z: 122 }, true);
+          // Re-orient enemy toward center on respawn
+          if (this.selectedVehicle === 'tank') {
+            // Enemy is Warhound (forward +Z), needs 180° to face -Z
+            const erq = new THREE.Quaternion();
+            erq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+            vehicle.body.setRotation({ x: erq.x, y: erq.y, z: erq.z, w: erq.w }, true);
+          } else {
+            // Enemy is Tank (forward -Z), already faces toward center
+            vehicle.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+          }
         }
         console.log('Enemy hero respawned!');
       }, 10000);
