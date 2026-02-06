@@ -56,6 +56,11 @@ export class Warhound {
     // Visual offset from physics body
     this.meshOffsetY = 0;
 
+    // Lock-on
+    this.lockTarget = null; // set by Controls when player taps an enemy
+    this._lockTurretSpeed = 3.0; // auto-aim rotation speed (rad/sec)
+    this._toTargetDir = new THREE.Vector3();
+
     // Health
     this.maxHealth = 50;
     this.health = this.maxHealth;
@@ -250,8 +255,35 @@ export class Warhound {
     }
 
     // Turret (spine) rotation - ADD to base, clamped to ±45 degrees
+    // Manual turret input takes priority over lock-on
     if (Math.abs(this.turretInput.x) > 0.1) {
       this.turretAngle -= this.turretInput.x * this.turretSpeed * delta;
+      this.turretAngle = Math.max(-this.maxTurretAngle, Math.min(this.maxTurretAngle, this.turretAngle));
+    } else if (this.lockTarget && this.lockTarget.isAlive && this.lockTarget.isAlive() && this.lockTarget.mesh) {
+      // Auto-track locked target
+      const targetPos = this.lockTarget.getPosition();
+      this._toTargetDir.subVectors(targetPos, this.mesh.position).setY(0).normalize();
+
+      // Get hull forward (Warhound forward is +Z)
+      const hullForward = this._forwardWorld.copy(this._forwardLocal).applyQuaternion(this.mesh.quaternion);
+      hullForward.setY(0).normalize();
+
+      // Angle from hull forward to target
+      const cross = hullForward.x * this._toTargetDir.z - hullForward.z * this._toTargetDir.x;
+      const dot = hullForward.dot(this._toTargetDir);
+      let desiredAngle = Math.atan2(cross, dot);
+
+      // Clamp to spine limits
+      desiredAngle = Math.max(-this.maxTurretAngle, Math.min(this.maxTurretAngle, desiredAngle));
+
+      // Smoothly rotate toward desired angle
+      const angleDiff = desiredAngle - this.turretAngle;
+      const maxStep = this._lockTurretSpeed * delta;
+      if (Math.abs(angleDiff) < maxStep) {
+        this.turretAngle = desiredAngle;
+      } else {
+        this.turretAngle += Math.sign(angleDiff) * maxStep;
+      }
       this.turretAngle = Math.max(-this.maxTurretAngle, Math.min(this.maxTurretAngle, this.turretAngle));
     }
 

@@ -36,6 +36,11 @@ export class Tank {
     this._forwardLocal = new THREE.Vector3(0, 0, -1);
     this._forwardWorld = new THREE.Vector3();
 
+    // Lock-on
+    this.lockTarget = null; // set by Controls when player taps an enemy
+    this._lockTurretSpeed = 3.0; // auto-aim rotation speed (rad/sec)
+    this._toTargetDir = new THREE.Vector3();
+
     // Health
     this.maxHealth = 50;
     this.health = this.maxHealth;
@@ -204,8 +209,31 @@ export class Tank {
     this.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
 
     // Turret rotation (independent of hull)
+    // Manual turret input takes priority over lock-on
     if (Math.abs(this.turretInput.x) > 0.1) {
       this.turretAngle -= this.turretInput.x * this.turretSpeed * delta;
+    } else if (this.lockTarget && this.lockTarget.isAlive && this.lockTarget.isAlive() && this.lockTarget.mesh) {
+      // Auto-track locked target
+      const targetPos = this.lockTarget.getPosition();
+      this._toTargetDir.subVectors(targetPos, this.mesh.position).setY(0).normalize();
+
+      // Get hull forward
+      const hullForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.mesh.quaternion);
+      hullForward.setY(0).normalize();
+
+      // Angle from hull forward to target
+      const cross = hullForward.x * this._toTargetDir.z - hullForward.z * this._toTargetDir.x;
+      const dot = hullForward.dot(this._toTargetDir);
+      const desiredAngle = Math.atan2(cross, dot);
+
+      // Smoothly rotate toward desired angle
+      const angleDiff = desiredAngle - this.turretAngle;
+      const maxStep = this._lockTurretSpeed * delta;
+      if (Math.abs(angleDiff) < maxStep) {
+        this.turretAngle = desiredAngle;
+      } else {
+        this.turretAngle += Math.sign(angleDiff) * maxStep;
+      }
     }
 
     if (this.turret) {

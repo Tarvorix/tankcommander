@@ -7,6 +7,7 @@ import { Controls } from './Controls.js';
 import { ThirdPersonCamera } from './Camera.js';
 import { TargetManager } from './Target.js';
 import { AIController } from './AIController.js';
+import { LockOnReticle } from './LockOnReticle.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -248,8 +249,8 @@ class Game {
       this.vehicle.damageTargets = [this.enemyVehicle];
       this.enemyVehicle.damageTargets = [this.vehicle];
 
-      // AI controller drives the enemy vehicle toward the player
-      this.aiController = new AIController(this.enemyVehicle, this.vehicle);
+      // AI controller drives the enemy vehicle toward the player (pass scene for obstacle avoidance)
+      this.aiController = new AIController(this.enemyVehicle, this.vehicle, this.scene);
 
       // Handle enemy death
       this.enemyVehicle.onDeath = (vehicle) => {
@@ -269,8 +270,18 @@ class Game {
       this.camera = new ThirdPersonCamera(this.vehicle, this.scene);
       console.log('Camera ready');
 
-      // Controls
-      this.controls = new Controls(this.vehicle, this.camera);
+      // Lock-on reticle (3D visual indicator)
+      this.lockOnReticle = new LockOnReticle(this.scene);
+
+      // Controls (now receives renderer, scene, and lockable targets for tap-to-lock)
+      this.controls = new Controls(
+        this.vehicle,
+        this.camera,
+        this.renderer,
+        this.scene,
+        [this.enemyVehicle] // lockable targets
+      );
+      this.controls.lockOnReticle = this.lockOnReticle;
       console.log('Controls ready');
 
       // Start game loop
@@ -383,6 +394,14 @@ class Game {
 
     // Update targets
     this.targetManager.update(delta);
+
+    // Update lock-on state and reticle
+    if (this.controls) {
+      this.controls.updateLock();
+    }
+    if (this.lockOnReticle) {
+      this.lockOnReticle.update(delta, this.camera);
+    }
 
     // Update camera
     this.camera.update(delta);
