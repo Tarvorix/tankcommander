@@ -5,9 +5,13 @@ import { Warhound } from './Warhound.js';
 import { Terrain } from './Terrain.js';
 import { Controls } from './Controls.js';
 import { ThirdPersonCamera } from './Camera.js';
-import { TargetManager } from './Target.js';
+
 import { AIController } from './AIController.js';
 import { LockOnReticle } from './LockOnReticle.js';
+import { SmokeEffect } from './SmokeEffect.js';
+import { InfantrySquad } from './InfantrySquad.js';
+import { InfantryAI } from './InfantryAI.js';
+import { NavMeshSystem } from './NavMeshSystem.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -29,6 +33,12 @@ class Game {
     this.previewFrameId = null;
     this.previewLoader = null;
     this.previewLoadToken = 0;
+    this.effects = [];
+    this.playerSquad = null;
+    this.enemySquad = null;
+    this.playerSquadAI = null;
+    this.enemySquadAI = null;
+    this.navMeshSystem = null;
     this.previewContainer = document.getElementById('unit-preview');
     this.vehicles = [
       { id: 'tank', name: 'Iron Bastion', desc: 'Heavy Battle Tank', model: 'bastion.glb' },
@@ -154,14 +164,23 @@ class Game {
   }
 
   async startGame() {
-    // Hide menu
+    // Hide menu, show loading overlay
     document.getElementById('start-menu').classList.add('hidden');
-
-    // Show game UI
-    document.querySelectorAll('.game-ui').forEach(el => el.classList.add('active'));
+    document.getElementById('loading-overlay').classList.add('active');
 
     this.teardownPreview();
     await this.init();
+
+    // Hide loading overlay, show game UI
+    document.getElementById('loading-overlay').classList.remove('active');
+    document.querySelectorAll('.game-ui').forEach(el => el.classList.add('active'));
+  }
+
+  updateLoading(percent, status) {
+    const fill = document.getElementById('loading-bar-fill');
+    const text = document.getElementById('loading-status');
+    if (fill) fill.style.width = percent + '%';
+    if (text) text.textContent = status;
   }
 
   teardownPreview() {
@@ -188,6 +207,7 @@ class Game {
   async init() {
     try {
       console.log('Starting game init...');
+      this.updateLoading(0, 'Initializing renderer...');
 
       // Renderer setup
       this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -200,24 +220,46 @@ class Game {
       console.log('Renderer ready');
 
       // Initialize Rapier physics
+      this.updateLoading(5, 'Initializing physics engine...');
       await RAPIER.init();
       this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
       console.log('Physics ready');
 
       // Lighting
+      this.updateLoading(10, 'Setting up lighting...');
       this.setupLighting();
+
+      // Environment map for metallic PBR materials (Warhound red armor, etc.)
+      const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+      pmremGenerator.compileEquirectangularShader();
+      const envScene = new THREE.Scene();
+      envScene.background = new THREE.Color(0x87CEEB);
+      // Add matching lights to the env scene for realistic reflections
+      const envHemi = new THREE.HemisphereLight(0x87CEEB, 0x8B7355, 0.8);
+      envScene.add(envHemi);
+      const envSun = new THREE.DirectionalLight(0xffffff, 1.5);
+      envSun.position.set(0, 1, 0.5);
+      envScene.add(envSun);
+      this.scene.environment = pmremGenerator.fromScene(envScene, 0.04).texture;
+      pmremGenerator.dispose();
       console.log('Lighting ready');
 
       // Create terrain
+      this.updateLoading(15, 'Generating terrain...');
       this.terrain = new Terrain(this.scene, this.world);
       console.log('Terrain ready');
 
-      // Create targets
-      this.targetManager = new TargetManager(this.scene, this.world);
-      this.targetManager.spawnTargets(5);
-      console.log('Targets spawned');
+      // Build navmesh for infantry pathfinding (async — runs in parallel with vehicle loading)
+      this.updateLoading(20, 'Building navigation mesh...');
+      this.navMeshSystem = new NavMeshSystem();
+      const navMeshPromise = this.navMeshSystem.build(this.terrain).then(success => {
+        if (!success) console.warn('NavMesh build failed — infantry will use direct steering');
+      }).catch(err => {
+        console.warn('NavMesh build error:', err);
+      });
 
       // Load selected vehicle
+      this.updateLoading(30, 'Loading your vehicle...');
       if (this.selectedVehicle === 'warhound') {
         this.vehicle = new Warhound(this.scene, this.world);
         await this.vehicle.load('warhound.glb');
@@ -227,9 +269,8 @@ class Game {
         await this.vehicle.load('bastion.glb');
         console.log('Tank loaded');
       }
-      this.vehicle.setTargetManager(this.targetManager);
-
       // Spawn AI enemy (opposite vehicle type)
+      this.updateLoading(45, 'Loading enemy vehicle...');
       if (this.selectedVehicle === 'warhound') {
         this.enemyVehicle = new Tank(this.scene, this.world);
         await this.enemyVehicle.load('bastion.glb');
@@ -240,33 +281,93 @@ class Game {
         console.log('AI Warhound loaded');
       }
 
-      // Position the AI enemy away from the player spawn
+      // Position sides at opposite ends of the 400x400 map
+      if (this.vehicle.body) {
+        this.vehicle.body.setTranslation({ x: -170, y: 4, z: 0 }, true);
+      }
       if (this.enemyVehicle.body) {
-        this.enemyVehicle.body.setTranslation({ x: 30, y: 4, z: 30 }, true);
+        this.enemyVehicle.body.setTranslation({ x: 170, y: 4, z: 0 }, true);
       }
 
-      // Wire up damage targets: player projectiles can hit enemy, enemy projectiles can hit player
-      this.vehicle.damageTargets = [this.enemyVehicle];
-      this.enemyVehicle.damageTargets = [this.vehicle];
+      // --- Infantry Squads ---
+      this.updateLoading(60, 'Deploying player infantry...');
+      this.playerSquad = new InfantrySquad(this.scene, this.world, this.terrain);
+      await this.playerSquad.load();
+      this.playerSquad.setLeader(this.vehicle);
+      // Use body translation directly — mesh position hasn't synced yet (no update() call)
+      const playerBodyPos = this.vehicle.body.translation();
+      this.playerSquad.positionFormation({ x: playerBodyPos.x, y: playerBodyPos.y, z: playerBodyPos.z });
+      console.log('Player infantry squad ready');
+
+      this.updateLoading(70, 'Deploying enemy infantry...');
+      this.enemySquad = new InfantrySquad(this.scene, this.world, this.terrain);
+      await this.enemySquad.load();
+      this.enemySquad.setLeader(this.enemyVehicle);
+      const enemyBodyPos = this.enemyVehicle.body.translation();
+      this.enemySquad.positionFormation({ x: enemyBodyPos.x, y: enemyBodyPos.y, z: enemyBodyPos.z });
+      console.log('Enemy infantry squad ready');
+
+      // Wire up damage targets: vehicles + infantry can hit each other
+      this.vehicle.damageTargets = [this.enemyVehicle, ...this.enemySquad.getAllSoldiers()];
+      this.enemyVehicle.damageTargets = [this.vehicle, ...this.playerSquad.getAllSoldiers()];
+      this.playerSquad.setDamageTargets([this.enemyVehicle, ...this.enemySquad.getAllSoldiers()]);
+      this.enemySquad.setDamageTargets([this.vehicle, ...this.playerSquad.getAllSoldiers()]);
 
       // AI controller drives the enemy vehicle toward the player (pass scene for obstacle avoidance)
       this.aiController = new AIController(this.enemyVehicle, this.vehicle, this.scene);
 
-      // Handle enemy death
+      // Wait for navmesh to finish building before creating infantry AI
+      this.updateLoading(80, 'Finalizing navigation mesh...');
+      await navMeshPromise;
+
+      // Infantry AI controllers (with navmesh pathfinding)
+      this.playerSquadAI = new InfantryAI(
+        this.playerSquad,
+        () => [this.enemyVehicle, ...this.enemySquad.getAliveSoldiers()],
+        this.navMeshSystem
+      );
+      this.enemySquadAI = new InfantryAI(
+        this.enemySquad,
+        () => [this.vehicle, ...this.playerSquad.getAliveSoldiers()],
+        this.navMeshSystem
+      );
+
+      // Handle enemy vehicle death
       this.enemyVehicle.onDeath = (vehicle) => {
         console.log('Enemy destroyed!');
         this.updateHealthBars();
+        const pos = vehicle.getPosition();
+        const smokeScale = (vehicle.vehicleHeight || 6) / 6;
+        this.effects.push(new SmokeEffect(this.scene, pos, smokeScale));
       };
 
-      // Handle player death
+      // Handle player vehicle death
       this.vehicle.onDeath = (vehicle) => {
         console.log('Player destroyed!');
         this.updateHealthBars();
+        const pos = vehicle.getPosition();
+        const smokeScale = (vehicle.vehicleHeight || 6) / 6;
+        this.effects.push(new SmokeEffect(this.scene, pos, smokeScale));
       };
+
+      // Handle infantry death (small smoke)
+      for (const soldier of this.playerSquad.getAllSoldiers()) {
+        soldier.onDeath = (s) => {
+          const pos = s.getPosition();
+          this.effects.push(new SmokeEffect(this.scene, pos, 0.3));
+        };
+      }
+      for (const soldier of this.enemySquad.getAllSoldiers()) {
+        soldier.onDeath = (s) => {
+          const pos = s.getPosition();
+          this.effects.push(new SmokeEffect(this.scene, pos, 0.3));
+        };
+      }
 
       console.log('AI enemy ready');
 
       // Camera (pass scene for terrain collision detection)
+      this.updateLoading(90, 'Setting up camera...');
       this.camera = new ThirdPersonCamera(this.vehicle, this.scene);
       console.log('Camera ready');
 
@@ -279,12 +380,13 @@ class Game {
         this.camera,
         this.renderer,
         this.scene,
-        [this.enemyVehicle] // lockable targets
+        [this.enemyVehicle, ...this.enemySquad.getAllSoldiers()] // lockable targets
       );
       this.controls.lockOnReticle = this.lockOnReticle;
       console.log('Controls ready');
 
       // Start game loop
+      this.updateLoading(100, 'Launching battle...');
       this.animate();
       console.log('Game running');
     } catch (error) {
@@ -301,23 +403,25 @@ class Game {
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
     this.scene.add(ambient);
 
-    // Directional (sun)
+    // Directional (sun) — high overhead so both sides of the 400m map are lit evenly
     const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-    sun.position.set(50, 100, 50);
+    sun.position.set(0, 150, 50);
     sun.castShadow = true;
+    sun.shadow.bias = -0.002;
+    sun.shadow.normalBias = 0.05;
     sun.shadow.mapSize.width = 2048;
     sun.shadow.mapSize.height = 2048;
     sun.shadow.camera.near = 0.5;
     sun.shadow.camera.far = 500;
-    sun.shadow.camera.left = -100;
-    sun.shadow.camera.right = 100;
-    sun.shadow.camera.top = 100;
-    sun.shadow.camera.bottom = -100;
+    sun.shadow.camera.left = -200;
+    sun.shadow.camera.right = 200;
+    sun.shadow.camera.top = 200;
+    sun.shadow.camera.bottom = -200;
     this.scene.add(sun);
 
     // Sky color
     this.scene.background = new THREE.Color(0x87CEEB);
-    this.scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
+    this.scene.fog = new THREE.Fog(0x87CEEB, 100, 400);
   }
 
   onResize() {
@@ -392,8 +496,11 @@ class Game {
       this.enemyVehicle.update(delta);
     }
 
-    // Update targets
-    this.targetManager.update(delta);
+    // Update infantry squads
+    if (this.playerSquadAI) this.playerSquadAI.update(delta);
+    if (this.playerSquad) this.playerSquad.update(delta);
+    if (this.enemySquadAI) this.enemySquadAI.update(delta);
+    if (this.enemySquad) this.enemySquad.update(delta);
 
     // Update lock-on state and reticle
     if (this.controls) {
@@ -402,6 +509,16 @@ class Game {
     if (this.lockOnReticle) {
       this.lockOnReticle.update(delta, this.camera);
     }
+
+    // Update visual effects
+    this.effects = this.effects.filter(effect => {
+      effect.update(delta);
+      if (!effect.alive) {
+        effect.dispose();
+        return false;
+      }
+      return true;
+    });
 
     // Update camera
     this.camera.update(delta);

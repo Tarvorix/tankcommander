@@ -14,7 +14,7 @@ export class Projectile {
     this.speed = 50;
 
     // Visual
-    const geometry = new THREE.SphereGeometry(0.15, 8, 8);
+    const geometry = new THREE.SphereGeometry(0.4, 8, 8);
     const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.position.copy(position);
@@ -31,7 +31,7 @@ export class Projectile {
 
     this.body = this.world.createRigidBody(bodyDesc);
 
-    const colliderDesc = RAPIER.ColliderDesc.ball(0.15)
+    const colliderDesc = RAPIER.ColliderDesc.ball(0.4)
       .setRestitution(0)
       .setFriction(0)
       .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
@@ -68,7 +68,7 @@ export class Projectile {
     const pos = this.body.translation();
 
     // Cast a small sphere to check for intersections
-    const shape = new RAPIER.Ball(0.2);
+    const shape = new RAPIER.Ball(0.5);
     const shapePos = { x: pos.x, y: pos.y, z: pos.z };
     const shapeRot = { x: 0, y: 0, z: 0, w: 1 };
 
@@ -107,7 +107,7 @@ export class Projectile {
 
   createHitEffect(position) {
     // Simple hit flash effect
-    const flashGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+    const flashGeometry = new THREE.SphereGeometry(1.2, 8, 8);
     const flashMaterial = new THREE.MeshBasicMaterial({
       color: 0xff8800,
       transparent: true,

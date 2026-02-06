@@ -1,6 +1,6 @@
 ## Claude Code Guidelines
 
-maxTokens: 128000
+
 
 ## Core Behavior
 

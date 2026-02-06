@@ -9,9 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "three": "^0.160.0",
     "@dimforge/rapier3d-compat": "^0.12.0",
-    "nipplejs": "^0.10.1"
+    "@recast-navigation/three": "^0.43.0",
+    "nipplejs": "^0.10.1",
+    "recast-navigation": "^0.43.0",
+    "three": "^0.160.0"
   },
   "devDependencies": {
     "vite": "^5.0.0"

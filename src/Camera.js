@@ -12,10 +12,14 @@ export class ThirdPersonCamera {
       1000
     );
 
-    // Camera offset from tank (behind and above)
-    this.baseOffset = new THREE.Vector3(0, 5, 8);
+    // Scale camera offsets based on vehicle height (1 unit = 1 meter)
+    // Use a minimum effective height of 15 so both vehicles get a
+    // properly zoomed-out third-person view.
+    const h = vehicle.vehicleHeight || 6;
+    const camH = Math.max(h, 15);
+    this.baseOffset = new THREE.Vector3(0, camH * 0.8, camH * 1.3);
     this.currentOffset = this.baseOffset.clone();
-    this.lookOffset = new THREE.Vector3(0, 1, 0);
+    this.lookOffset = new THREE.Vector3(0, h * 0.35, 0);
 
     // Smoothing
     this.currentPosition = new THREE.Vector3();
@@ -23,9 +27,9 @@ export class ThirdPersonCamera {
     this.smoothSpeed = 8; // Snappier camera response
 
     // Dynamic distance settings
-    this.minDistance = 8;
-    this.maxDistance = 14;
-    this.currentDistance = 10;
+    this.minDistance = camH * 1.3;
+    this.maxDistance = camH * 2.2;
+    this.currentDistance = camH * 1.6;
     this.distanceSmoothSpeed = 3;
 
     // Turret follow mode - disabled by default for better driving
@@ -34,7 +38,7 @@ export class ThirdPersonCamera {
 
     // Terrain collision
     this.raycaster = new THREE.Raycaster();
-    this.minCameraHeight = 2; // Minimum height above ground
+    this.minCameraHeight = camH * 0.3; // Minimum height above ground
     this._forward = new THREE.Vector3();
     this._yawAxis = new THREE.Vector3(0, 1, 0);
     this._turretQuat = new THREE.Quaternion();

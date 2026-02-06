@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Tank Command</title>
+  <title>Combat Command</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- Start Menu -->
   <div id="start-menu">
-    <h1>TANK COMMAND</h1>
+    <h1>COMBAT COMMAND</h1>
     <p>Select Your Vehicle</p>
     <div id="unit-selector">
       <button id="unit-prev" class="arrow-btn" type="button" aria-label="Previous unit">&#x25C0;</button>
@@ -25,6 +25,17 @@
     </div>
     <div id="unit-hint">Drag to rotate • Scroll/Pinch to zoom</div>
     <button id="unit-select" type="button">Deploy</button>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay">
+    <div id="loading-content">
+      <h2 id="loading-title">DEPLOYING FORCES</h2>
+      <div id="loading-bar-track">
+        <div id="loading-bar-fill"></div>
+      </div>
+      <div id="loading-status">Initializing...</div>
+    </div>
   </div>
 
   <!-- Game UI -->

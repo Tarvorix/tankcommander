@@ -34,7 +34,7 @@ export class AIController {
     this.detectRange = 60;
     this.attackRange = 35;
     this.optimalRange = 20;   // preferred fighting distance
-    this.retreatRange = 10;   // back up if closer than this
+    this.retreatRange = 15;   // back up if closer than this
 
     // Attack timing
     this.fireTimer = 0;
@@ -222,7 +222,7 @@ export class AIController {
     // Check if we've reached the patrol target
     const dist = myPos.distanceTo(this.patrolTarget);
 
-    if (dist < 5) {
+    if (dist < 8) {
       // Arrived at waypoint — pause briefly
       if (this.patrolPauseTimer <= 0) {
         this.patrolPauseDuration = 1 + Math.random() * 2; // 1-3 seconds
@@ -318,7 +318,7 @@ export class AIController {
 
     this.fireTimer += delta;
     const currentTurretAngle = this.vehicle.turretAngle || 0;
-    const aimError = this.angleTo(myPos, playerPos) - currentTurretAngle;
+    const aimError = this.angleTo(myPos, playerPos) + currentTurretAngle;
     const effectiveCooldown = this.fireCooldown + (Math.random() - 0.5) * this.fireCooldownVariance;
 
     if (Math.abs(aimError) < this.aimThreshold && this.fireTimer >= effectiveCooldown) {
@@ -340,7 +340,7 @@ export class AIController {
     const currentTurretAngle = this.vehicle.turretAngle || 0;
 
     // Error = how far the turret needs to rotate
-    const aimError = angleToPlayer - currentTurretAngle;
+    const aimError = angleToPlayer + currentTurretAngle;
 
     // Feed turret input proportional to error
     return Math.max(-1, Math.min(1, aimError * 3));
@@ -356,7 +356,7 @@ export class AIController {
     this.vehicle.getForwardVector(this._forward);
     this._forward.setY(0).normalize();
 
-    const checkDist = 8;
+    const checkDist = 12;
     const spreadAngle = 0.4; // ~23 degrees
 
     // Build meshes list (terrain, rocks - fixed objects)

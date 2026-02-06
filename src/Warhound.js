@@ -35,7 +35,7 @@ export class Warhound {
     this.isWalking = false;
 
     // Movement
-    this.moveSpeed = 6;
+    this.moveSpeed = 8;
     this.turnSpeed = 1.5;
     this.velocity = new THREE.Vector3();
     this.moveInput = { x: 0, y: 0 };
@@ -46,9 +46,10 @@ export class Warhound {
     this.turretSpeed = 1.5;
     this.maxTurretAngle = Math.PI / 4; // 45 degrees max each way
 
-    // Firing
+    // Firing — alternates between left and right arm
     this.canFire = true;
     this.fireRate = 0.8;
+    this.fireFromLeft = true; // toggles each shot
     this.projectiles = [];
     this.targetManager = null;
     this.damageTargets = []; // vehicles that projectiles can damage
@@ -66,6 +67,11 @@ export class Warhound {
     this.health = this.maxHealth;
     this.colliderHandle = null;
     this.onDeath = null; // callback
+
+    // Target height for 40K scale (1 unit = 1 meter, Warhound Titan ~14m tall)
+    this.targetHeight = 14;
+    this.vehicleHeight = this.targetHeight;
+    this.scaleFactor = 1;
   }
 
   setTargetManager(targetManager) {
@@ -79,10 +85,18 @@ export class Warhound {
       loader.load(path, (gltf) => {
         this.model = gltf.scene;
 
-        // Debug: Log model info
-        const box = new THREE.Box3().setFromObject(gltf.scene);
+        // Measure original model size and scale to target height
+        const origBox = new THREE.Box3().setFromObject(gltf.scene);
+        const origSize = origBox.getSize(new THREE.Vector3());
+        this.scaleFactor = this.targetHeight / origSize.y;
+        this.model.scale.setScalar(this.scaleFactor);
+        console.log('Warhound scale factor:', this.scaleFactor, '(original height:', origSize.y, '→', this.targetHeight, ')');
+
+        // Recompute bounding box from scaled model
+        const box = new THREE.Box3().setFromObject(this.model);
         const size = box.getSize(new THREE.Vector3());
-        console.log('Warhound model size:', size);
+        this.vehicleHeight = size.y;
+        console.log('Warhound scaled size:', size);
         console.log('Warhound bounds min:', box.min);
         console.log('Warhound bounds max:', box.max);
 
@@ -152,15 +166,20 @@ export class Warhound {
 
     const rigidBodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(0, spawnY, 0)
-      .setLinearDamping(5.0)
-      .setAngularDamping(10.0)
+      .setLinearDamping(2.0)
+      .setAngularDamping(8.0)
       .enabledRotations(false, true, false);
 
     this.body = this.world.createRigidBody(rigidBodyDesc);
 
+    // Collision groups: vehicles use membership=0x0002 so infantry (filter=0x0001) won't collide.
+    // filter=0xFFFF means vehicles still collide with terrain, rocks, projectiles, other vehicles.
+    const vehicleGroups = (0x0002 << 16) | 0xFFFF;
+
     const colliderDesc = RAPIER.ColliderDesc.capsule(capsuleHalfHeight, radius)
-      .setMass(80)
-      .setFriction(1.0);
+      .setMass(40)
+      .setFriction(0.3)
+      .setCollisionGroups(vehicleGroups);
     const collider = this.world.createCollider(colliderDesc, this.body);
     this.colliderHandle = collider.handle;
 
@@ -183,23 +202,34 @@ export class Warhound {
 
     this.canFire = false;
 
-    // Get spine world position for firing point
+    // Get spine world position and orientation
     const spineWorldPos = new THREE.Vector3();
     this.spine.getWorldPosition(spineWorldPos);
 
-    // Use spine world orientation so projectile direction matches visible torso aim.
     this.spine.getWorldQuaternion(this._spineWorldQuat);
     const direction = this._forwardWorld
       .copy(this._forwardLocal)
       .applyQuaternion(this._spineWorldQuat)
       .normalize();
 
-    // Spawn projectile
-    const spawnPos = spineWorldPos.clone().add(direction.clone().multiplyScalar(3));
-    spawnPos.y += 1;
+    // Calculate arm offset: left or right side of the body
+    // Local X axis in spine space → world space for sideways offset
+    const sideDir = new THREE.Vector3(1, 0, 0).applyQuaternion(this._spineWorldQuat).normalize();
+    const armSideOffset = this.modelSize.x * 0.4; // arm is ~40% of total width from center
+    const side = this.fireFromLeft ? -1 : 1;
+
+    // Spawn position: spine + sideways to arm + forward to weapon tip
+    const forwardOffset = this.modelSize.z * 0.5;
+    const spawnPos = spineWorldPos.clone()
+      .add(sideDir.clone().multiplyScalar(side * armSideOffset))
+      .add(direction.clone().multiplyScalar(forwardOffset));
+    spawnPos.y += this.modelSize.y * 0.05;
 
     const projectile = new Projectile(this.scene, this.world, spawnPos, direction.normalize(), this.targetManager, this.damageTargets);
     this.projectiles.push(projectile);
+
+    // Alternate arms for next shot
+    this.fireFromLeft = !this.fireFromLeft;
 
     setTimeout(() => {
       this.canFire = true;
@@ -212,7 +242,13 @@ export class Warhound {
     // Get physics state
     const pos = this.body.translation();
     const rot = this.body.rotation();
-    const currentVel = this.body.linvel();
+    let currentVel = this.body.linvel();
+
+    // Clamp upward velocity to prevent infantry from pushing vehicle up
+    if (currentVel.y > 2) {
+      this.body.setLinvel({ x: currentVel.x, y: 2, z: currentVel.z }, true);
+      currentVel = this.body.linvel();
+    }
 
     // Rotation control
     if (Math.abs(this.moveInput.x) > 0.1) {

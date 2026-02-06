@@ -8,6 +8,8 @@ export class Terrain {
     this.world = world;
     this.textureLoader = new THREE.TextureLoader();
     this.exrLoader = new EXRLoader();
+    this.obstacleMeshes = [];
+    this.groundMesh = null;
 
     this.createGround();
     this.createSnowPatches();
@@ -16,7 +18,7 @@ export class Terrain {
 
   createGround() {
     // Visual ground
-    const geometry = new THREE.PlaneGeometry(200, 200, 50, 50);
+    const geometry = new THREE.PlaneGeometry(400, 400, 100, 100);
 
     // Add some height variation
     const vertices = geometry.attributes.position.array;
@@ -37,7 +39,7 @@ export class Terrain {
     diffuseMap.colorSpace = THREE.SRGBColorSpace;
 
     // Configure texture tiling
-    const textureRepeat = 20;
+    const textureRepeat = 40;
     [diffuseMap, roughnessMap].forEach(texture => {
       texture.wrapS = THREE.RepeatWrapping;
       texture.wrapT = THREE.RepeatWrapping;
@@ -64,6 +66,7 @@ export class Terrain {
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.groundMesh = ground;
 
     // Physics ground - trimesh collider matching visual terrain
     this.createTerrainCollider(geometry, ground.rotation);
@@ -142,33 +145,30 @@ export class Terrain {
   }
 
   getTerrainHeight(worldX, worldZ) {
-    // The terrain is a PlaneGeometry(200, 200, 50, 50) rotated -PI/2 around X.
-    // Local space: X from -100 to 100, Y from -100 to 100, 51 vertices per axis.
+    // The terrain is a PlaneGeometry(400, 400, 100, 100) rotated -PI/2 around X.
+    // Local space: X from -200 to 200, Y from -200 to 200, 101 vertices per axis.
     // After rotation: world X = local X, world Z = -local Y.
-    // So: local X = worldX, local Y = -worldZ.
     // Heights at grid vertices use: sin(localX * 0.05) * cos(localY * 0.05) * 2
     //
-    // The mesh linearly interpolates between grid vertices (4 units apart).
-    // Using the raw analytical formula causes mismatch on slopes.
     // Bilinear interpolation of grid vertex heights matches the actual rendered surface.
 
     const localX = worldX;
     const localY = -worldZ;
 
-    // Grid coordinates (50 segments, 51 vertices, spacing = 4 units)
-    const gridX = (localX + 100) / 4;
-    const gridY = (localY + 100) / 4;
+    // Grid coordinates (100 segments, 101 vertices, spacing = 4 units)
+    const gridX = (localX + 200) / 4;
+    const gridY = (localY + 200) / 4;
 
-    const ix = Math.max(0, Math.min(49, Math.floor(gridX)));
-    const iy = Math.max(0, Math.min(49, Math.floor(gridY)));
+    const ix = Math.max(0, Math.min(99, Math.floor(gridX)));
+    const iy = Math.max(0, Math.min(99, Math.floor(gridY)));
 
     const fx = gridX - ix;
     const fy = gridY - iy;
 
     // Height at a grid vertex
     const h = (gx, gy) => {
-      const lx = gx * 4 - 100;
-      const ly = gy * 4 - 100;
+      const lx = gx * 4 - 200;
+      const ly = gy * 4 - 200;
       return Math.sin(lx * 0.05) * Math.cos(ly * 0.05) * 2;
     };
 
@@ -184,7 +184,7 @@ export class Terrain {
 
   createSnowPatches() {
     const basePath = import.meta.env.BASE_URL;
-    const patchCount = 25;
+    const patchCount = 50;
 
     // Generate several irregular alpha maps for variety
     const alphaMaps = [];
@@ -233,8 +233,8 @@ export class Terrain {
 
     for (let i = 0; i < patchCount; i++) {
       const scale = Math.random() * 10 + 5;
-      const x = (Math.random() - 0.5) * 180;
-      const z = (Math.random() - 0.5) * 180;
+      const x = (Math.random() - 0.5) * 360;
+      const z = (Math.random() - 0.5) * 360;
       const rotAngle = Math.random() * Math.PI * 2;
 
       // Subdivided plane so we can conform each vertex to terrain height
@@ -314,11 +314,11 @@ export class Terrain {
     // Base geometries — subdivision 1-2 gives enough faces for natural shapes.
     // flatShading on the material provides the faceted rock look.
     const baseGeometries = [
-      new THREE.DodecahedronGeometry(2, 1),
-      new THREE.DodecahedronGeometry(2, 2),
-      new THREE.IcosahedronGeometry(2, 1),
-      new THREE.IcosahedronGeometry(2, 2),
-      new THREE.OctahedronGeometry(2, 2)
+      new THREE.DodecahedronGeometry(4, 1),
+      new THREE.DodecahedronGeometry(4, 2),
+      new THREE.IcosahedronGeometry(4, 1),
+      new THREE.IcosahedronGeometry(4, 2),
+      new THREE.OctahedronGeometry(4, 2)
     ];
 
     // Load rock_wall_02 textures for boulders
@@ -355,7 +355,7 @@ export class Terrain {
 
     const tempVec = new THREE.Vector3();
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 40; i++) {
       // Pick a random base geometry and clone for unique perturbation.
       // Polyhedron geometries are non-indexed — each triangle has its own
       // vertices, so duplicate positions exist at shared edges. We build a
@@ -395,8 +395,8 @@ export class Terrain {
       rockGeo.computeVertexNormals();
 
       const rock = new THREE.Mesh(rockGeo, rockMaterial);
-      const rx = (Math.random() - 0.5) * 150;
-      const rz = (Math.random() - 0.5) * 150;
+      const rx = (Math.random() - 0.5) * 300;
+      const rz = (Math.random() - 0.5) * 300;
 
       // Non-uniform scale for clearly varied proportions
       // (flat slabs, tall pillars, elongated boulders)
@@ -417,6 +417,7 @@ export class Terrain {
       rock.castShadow = true;
       rock.receiveShadow = true;
       this.scene.add(rock);
+      this.obstacleMeshes.push(rock);
 
       // Physics for rock - use average scale for collision sphere
       const avgScale = (scaleX + scaleY + scaleZ) / 3;

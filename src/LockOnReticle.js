@@ -98,9 +98,10 @@ export class LockOnReticle {
 
     this.phase += delta;
 
-    // Position above the target
+    // Position above the target (scale offset with vehicle height)
     const targetPos = this.target.getPosition();
-    this.group.position.set(targetPos.x, targetPos.y + 3.5, targetPos.z);
+    const yOffset = (this.target.vehicleHeight || 6) * 0.5;
+    this.group.position.set(targetPos.x, targetPos.y + yOffset, targetPos.z);
 
     // Face the reticle toward the camera (billboard on Y axis)
     if (camera && camera.camera) {

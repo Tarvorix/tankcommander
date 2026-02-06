@@ -46,6 +46,11 @@ export class Tank {
     this.health = this.maxHealth;
     this.colliderHandle = null;
     this.onDeath = null; // callback
+
+    // Target height for 40K scale (1 unit = 1 meter, super heavy tank ~6.3m tall)
+    this.targetHeight = 6.3;
+    this.vehicleHeight = this.targetHeight;
+    this.scaleFactor = 1;
   }
 
   setTargetManager(targetManager) {
@@ -59,12 +64,20 @@ export class Tank {
       loader.load(path, (gltf) => {
         this.mesh = gltf.scene;
 
-        // Debug: Log model info
-        const box = new THREE.Box3().setFromObject(gltf.scene);
+        // Measure original model size and scale to target height
+        const origBox = new THREE.Box3().setFromObject(gltf.scene);
+        const origSize = origBox.getSize(new THREE.Vector3());
+        this.scaleFactor = this.targetHeight / origSize.y;
+        this.mesh.scale.setScalar(this.scaleFactor);
+        console.log('Tank scale factor:', this.scaleFactor, '(original height:', origSize.y, '→', this.targetHeight, ')');
+
+        // Recompute bounding box from scaled model
+        const box = new THREE.Box3().setFromObject(this.mesh);
         const size = box.getSize(new THREE.Vector3());
-        console.log('Model size:', size);
-        console.log('Model bounds min:', box.min);
-        console.log('Model bounds max:', box.max);
+        this.vehicleHeight = size.y;
+        console.log('Tank scaled size:', size);
+        console.log('Tank bounds min:', box.min);
+        console.log('Tank bounds max:', box.max);
 
         // Find parts
         this.mesh.traverse((child) => {
@@ -125,9 +138,14 @@ export class Tank {
 
     this.body = this.world.createRigidBody(rigidBodyDesc);
 
+    // Collision groups: vehicles use membership=0x0002 so infantry (filter=0x0001) won't collide.
+    // filter=0xFFFF means vehicles still collide with terrain, rocks, projectiles, other vehicles.
+    const vehicleGroups = (0x0002 << 16) | 0xFFFF;
+
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfZ)
-      .setMass(50) // Heavier for more stable feel
-      .setFriction(1.0); // Higher friction
+      .setMass(50)
+      .setFriction(1.0)
+      .setCollisionGroups(vehicleGroups);
     const collider = this.world.createCollider(colliderDesc, this.body);
     this.colliderHandle = collider.handle;
 
@@ -158,9 +176,10 @@ export class Tank {
     direction.applyQuaternion(this.mesh.quaternion);
     direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.turretAngle);
 
-    // Spawn projectile at barrel tip
-    const spawnPos = turretWorldPos.clone().add(direction.clone().multiplyScalar(1.5));
-    spawnPos.y += 0.3;
+    // Spawn projectile at barrel tip (offset scales with model)
+    const barrelOffset = this.modelSize.z * 0.4;
+    const spawnPos = turretWorldPos.clone().add(direction.clone().multiplyScalar(barrelOffset));
+    spawnPos.y += this.modelSize.y * 0.05;
 
     const projectile = new Projectile(this.scene, this.world, spawnPos, direction.normalize(), this.targetManager, this.damageTargets);
     this.projectiles.push(projectile);
@@ -177,7 +196,13 @@ export class Tank {
     // Get physics state
     const pos = this.body.translation();
     const rot = this.body.rotation();
-    const currentVel = this.body.linvel();
+    let currentVel = this.body.linvel();
+
+    // Clamp upward velocity to prevent infantry from pushing vehicle up
+    if (currentVel.y > 2) {
+      this.body.setLinvel({ x: currentVel.x, y: 2, z: currentVel.z }, true);
+      currentVel = this.body.linvel();
+    }
 
     // Direct rotation control (no momentum buildup)
     if (Math.abs(this.moveInput.x) > 0.1) {
