@@ -159,8 +159,8 @@ export class MOBAControls {
     let touchStartY = 0;
     let touchMoved = false;
     let touchId = -1;
-    let fingerCount = 0;
     let touchStartedOnGame = false;
+    let wasTwoFingerGesture = false;
 
     // Helper: check if a touch target is a game UI button (not the game world)
     const isUIElement = (target) => {
@@ -179,20 +179,20 @@ export class MOBAControls {
       return false;
     };
 
-    // Listen on document to catch all touch events reliably on iOS Safari
-    // Canvas-level touch listeners can be unreliable on mobile WebGL
+    // Listen on document to catch all touch events reliably on iOS Safari.
+    // All handlers are passive — CSS touch-action:none on * already prevents
+    // native browser gestures (scroll, zoom, 300ms delay). Calling
+    // preventDefault() on touchstart on iOS Safari can cancel the entire
+    // touch sequence and block the camera's two-finger pan/zoom listeners.
     document.addEventListener('touchstart', (e) => {
-      fingerCount = e.touches.length;
-
       // Ignore touches on UI buttons
       if (isUIElement(e.target)) {
         touchStartedOnGame = false;
         return;
       }
 
-      // Only track single-finger taps for movement
-      // Two-finger gestures are handled by MOBACamera for pan/zoom
       if (e.touches.length === 1) {
+        // Single finger — track for potential tap-to-move
         const touch = e.touches[0];
         touchStartTime = performance.now();
         touchStartX = touch.clientX;
@@ -200,14 +200,19 @@ export class MOBAControls {
         touchMoved = false;
         touchId = touch.identifier;
         touchStartedOnGame = true;
-
-        // Prevent default to avoid 300ms click delay and browser gestures on iOS
-        e.preventDefault();
+        wasTwoFingerGesture = false;
+      } else if (e.touches.length >= 2) {
+        // Two-finger gesture starting — camera handles pan/zoom
+        wasTwoFingerGesture = true;
       }
-    }, { passive: false });
+    }, { passive: true });
 
     document.addEventListener('touchmove', (e) => {
-      fingerCount = e.touches.length;
+      if (e.touches.length >= 2) {
+        // Two-finger gesture in progress — camera handles this
+        wasTwoFingerGesture = true;
+        return;
+      }
 
       if (!touchStartedOnGame) return;
 
@@ -222,16 +227,20 @@ export class MOBAControls {
           }
         }
       }
-
-      // Prevent scrolling/rubber-banding
-      e.preventDefault();
-    }, { passive: false });
+    }, { passive: true });
 
     document.addEventListener('touchend', (e) => {
-      if (!touchStartedOnGame) {
-        fingerCount = e.touches.length;
+      // If this was part of a two-finger gesture, don't treat as tap
+      if (wasTwoFingerGesture) {
+        if (e.touches.length === 0) {
+          wasTwoFingerGesture = false;
+          touchStartedOnGame = false;
+          touchId = -1;
+        }
         return;
       }
+
+      if (!touchStartedOnGame) return;
 
       const touch = e.changedTouches[0];
       if (!touch) return;
@@ -240,23 +249,18 @@ export class MOBAControls {
       const elapsed = performance.now() - touchStartTime;
 
       // Tap detection: quick single-finger touch without much movement
-      // fingerCount check ensures two-finger gestures that end one finger at a time
-      // don't accidentally trigger movement
-      if (elapsed < 400 && !touchMoved && fingerCount <= 1) {
+      if (elapsed < 400 && !touchMoved) {
         // Treat tap as right-click (move to location / attack enemy)
         this.handleRightClick(touch.clientX, touch.clientY);
       }
 
       touchId = -1;
-      fingerCount = e.touches.length;
       touchStartedOnGame = false;
-
-      e.preventDefault();
-    }, { passive: false });
+    }, { passive: true });
 
     document.addEventListener('touchcancel', () => {
       touchId = -1;
-      fingerCount = 0;
+      wasTwoFingerGesture = false;
       touchStartedOnGame = false;
     });
 
