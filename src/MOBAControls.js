@@ -143,6 +143,8 @@ export class MOBAControls {
 
   setupMobileControls() {
     const canvas = this.renderer.domElement;
+    // The game container wraps the canvas
+    const gameContainer = canvas.parentElement || canvas;
 
     let touchStartTime = 0;
     let touchStartX = 0;
@@ -150,10 +152,35 @@ export class MOBAControls {
     let touchMoved = false;
     let touchId = -1;
     let fingerCount = 0;
+    let touchStartedOnGame = false;
 
-    // Use non-passive to allow preventDefault on iOS Safari
-    canvas.addEventListener('touchstart', (e) => {
+    // Helper: check if a touch target is a game UI button (not the game world)
+    const isUIElement = (target) => {
+      if (!target) return false;
+      // Walk up DOM to see if touch started inside a UI overlay
+      let el = target;
+      while (el && el !== document.body) {
+        if (el === canvas || el === gameContainer) return false;
+        if (el.id === 'ability-bar' || el.id === 'minimap' ||
+            el.id === 'recenter-btn' || el.id === 'game-over-overlay' ||
+            el.id === 'start-menu' || el.id === 'loading-overlay') {
+          return true;
+        }
+        el = el.parentElement;
+      }
+      return false;
+    };
+
+    // Listen on document to catch all touch events reliably on iOS Safari
+    // Canvas-level touch listeners can be unreliable on mobile WebGL
+    document.addEventListener('touchstart', (e) => {
       fingerCount = e.touches.length;
+
+      // Ignore touches on UI buttons
+      if (isUIElement(e.target)) {
+        touchStartedOnGame = false;
+        return;
+      }
 
       // Only track single-finger taps for movement
       // Two-finger gestures are handled by MOBACamera for pan/zoom
@@ -164,14 +191,17 @@ export class MOBAControls {
         touchStartY = touch.clientY;
         touchMoved = false;
         touchId = touch.identifier;
+        touchStartedOnGame = true;
 
         // Prevent default to avoid 300ms click delay and browser gestures on iOS
         e.preventDefault();
       }
     }, { passive: false });
 
-    canvas.addEventListener('touchmove', (e) => {
+    document.addEventListener('touchmove', (e) => {
       fingerCount = e.touches.length;
+
+      if (!touchStartedOnGame) return;
 
       if (e.touches.length === 1) {
         const touch = e.touches[0];
@@ -185,11 +215,16 @@ export class MOBAControls {
         }
       }
 
-      // Always prevent default on canvas to stop scrolling/rubber-banding
+      // Prevent scrolling/rubber-banding
       e.preventDefault();
     }, { passive: false });
 
-    canvas.addEventListener('touchend', (e) => {
+    document.addEventListener('touchend', (e) => {
+      if (!touchStartedOnGame) {
+        fingerCount = e.touches.length;
+        return;
+      }
+
       const touch = e.changedTouches[0];
       if (!touch) return;
       if (touch.identifier !== touchId) return;
@@ -206,17 +241,19 @@ export class MOBAControls {
 
       touchId = -1;
       fingerCount = e.touches.length;
+      touchStartedOnGame = false;
 
       e.preventDefault();
     }, { passive: false });
 
-    canvas.addEventListener('touchcancel', () => {
+    document.addEventListener('touchcancel', () => {
       touchId = -1;
       fingerCount = 0;
+      touchStartedOnGame = false;
     });
 
-    // Prevent touch-hold context menu
-    canvas.addEventListener('contextmenu', (e) => {
+    // Prevent touch-hold context menu on game area
+    gameContainer.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
   }
