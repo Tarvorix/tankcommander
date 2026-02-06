@@ -19,6 +19,9 @@ export class MOBAHeroAI {
     this.player = playerVehicle;
     this.mobaMap = mobaMap;
 
+    // Navigation system (set externally)
+    this.navSystem = null;
+
     // State
     this.state = 'idle';
     this.stateTimer = 0;
@@ -28,6 +31,11 @@ export class MOBAHeroAI {
     this.moveTarget = null;
     this.waypointIndex = 0;
     this.lanePath = null;
+
+    // Nav mesh path following
+    this.navPath = [];
+    this.navPathIndex = 0;
+    this.navPathTimer = 0;
 
     // Combat
     this.attackTarget = null;
@@ -145,6 +153,45 @@ export class MOBAHeroAI {
     }
   }
 
+  /**
+   * Navigate to a position using the nav mesh if available.
+   * Computes path and starts following it.
+   */
+  navigateTo(myPos, targetPos) {
+    if (this.navSystem && this.navSystem.ready) {
+      this.navPath = this.navSystem.findPath(myPos, targetPos);
+      this.navPathIndex = 0;
+      // Skip first waypoint if close to start
+      if (this.navPath.length > 1) {
+        const firstDist = myPos.distanceTo(this.navPath[0]);
+        if (firstDist < 5) this.navPathIndex = 1;
+      }
+    } else {
+      this.navPath = [new THREE.Vector3(targetPos.x, targetPos.y || 0, targetPos.z)];
+      this.navPathIndex = 0;
+    }
+  }
+
+  /**
+   * Follow nav path waypoints, steering toward each one.
+   */
+  followNavPath(myPos, moveForward) {
+    if (this.navPathIndex >= this.navPath.length) {
+      this.vehicle.setMoveInput(0, 0);
+      return;
+    }
+
+    const wp = this.navPath[this.navPathIndex];
+    const dist = myPos.distanceTo(wp);
+
+    if (dist < 5 && this.navPathIndex < this.navPath.length - 1) {
+      this.navPathIndex++;
+    }
+
+    const currentWP = this.navPath[this.navPathIndex];
+    this.steerToward(myPos, currentWP, moveForward);
+  }
+
   doLane(delta, myPos) {
     if (!this.lanePath || this.lanePath.length === 0) return;
 
@@ -159,7 +206,13 @@ export class MOBAHeroAI {
       wp = this.lanePath[this.waypointIndex];
     }
 
-    this.steerToward(myPos, { x: wp.x, y: 0, z: wp.z }, true);
+    // Use nav mesh to navigate to next lane waypoint
+    this.navPathTimer -= delta;
+    if (this.navPathTimer <= 0 || this.navPath.length === 0) {
+      this.navigateTo(myPos, { x: wp.x, y: 0, z: wp.z });
+      this.navPathTimer = 2.0; // recompute every 2 seconds
+    }
+    this.followNavPath(myPos, true);
 
     // Attack nearby enemies while marching
     this.checkForNearbyEnemies(myPos, delta);
@@ -171,7 +224,12 @@ export class MOBAHeroAI {
     const dist = myPos.distanceTo(center);
 
     if (dist > 10) {
-      this.steerToward(myPos, center, true);
+      this.navPathTimer -= delta;
+      if (this.navPathTimer <= 0 || this.navPath.length === 0) {
+        this.navigateTo(myPos, center);
+        this.navPathTimer = 2.0;
+      }
+      this.followNavPath(myPos, true);
     } else {
       // At control point — hold position, look for enemies
       this.vehicle.setMoveInput(0, 0);
@@ -190,10 +248,15 @@ export class MOBAHeroAI {
     const dist = myPos.distanceTo(targetPos);
 
     if (dist > this.attackRange) {
-      // Chase
-      this.steerToward(myPos, targetPos, true);
+      // Chase using pathfinding
+      this.navPathTimer -= delta;
+      if (this.navPathTimer <= 0 || this.navPath.length === 0) {
+        this.navigateTo(myPos, targetPos);
+        this.navPathTimer = 1.0; // more frequent updates when chasing
+      }
+      this.followNavPath(myPos, true);
     } else if (dist > this.attackRange * 0.6) {
-      // At range — strafe and fire
+      // At range — face target and fire
       this.steerToward(myPos, targetPos, false);
       this.aimAndFire(myPos, targetPos, delta);
     } else {
@@ -212,6 +275,7 @@ export class MOBAHeroAI {
     if (dist < 20) {
       // At base — heal and wait
       this.vehicle.setMoveInput(0, 0);
+      this.navPath = [];
 
       // Passive healing at base
       if (this.vehicle.health < this.vehicle.maxHealth) {
@@ -226,7 +290,12 @@ export class MOBAHeroAI {
         this.setLane(this.currentLane);
       }
     } else {
-      this.steerToward(myPos, base, true);
+      this.navPathTimer -= delta;
+      if (this.navPathTimer <= 0 || this.navPath.length === 0) {
+        this.navigateTo(myPos, base);
+        this.navPathTimer = 2.0;
+      }
+      this.followNavPath(myPos, true);
     }
   }
 
