@@ -358,6 +358,9 @@ class Game {
       // Setup ability level-up button handlers
       this.setupAbilityLevelUpButtons();
 
+      // Setup mobile recenter camera button
+      this.setupRecenterButton();
+
       // Start game loop
       this.updateLoading(100, 'Battle begins...');
       this.animate();
@@ -494,19 +497,81 @@ class Game {
   }
 
   setupAbilityLevelUpButtons() {
+    const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
     for (const slot of ['q', 'w', 'e', 'r']) {
       const btn = document.getElementById(`ability-${slot}`);
-      if (btn) {
-        // Ctrl+click to level up ability
+      if (!btn) continue;
+
+      if (isTouchDevice) {
+        // Mobile: tap to cast, long-press (500ms) to level up
+        let touchTimer = null;
+        let didLongPress = false;
+
+        btn.addEventListener('touchstart', (e) => {
+          e.preventDefault(); // Prevent ghost click
+          e.stopPropagation(); // Don't let it reach the canvas
+          didLongPress = false;
+          touchTimer = setTimeout(() => {
+            didLongPress = true;
+            this.heroWrapper.abilitySystem.levelUpAbility(slot);
+            // Brief visual feedback
+            btn.style.transform = 'scale(1.15)';
+            setTimeout(() => { btn.style.transform = ''; }, 200);
+          }, 500);
+        }, { passive: false });
+
+        btn.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (touchTimer) {
+            clearTimeout(touchTimer);
+            touchTimer = null;
+          }
+          if (!didLongPress) {
+            // Short tap — cast ability
+            this.mobaControls.triggerAbility(slot);
+          }
+        }, { passive: false });
+
+        btn.addEventListener('touchmove', (e) => {
+          // Cancel long-press if finger moves
+          if (touchTimer) {
+            clearTimeout(touchTimer);
+            touchTimer = null;
+          }
+        }, { passive: true });
+
+        btn.addEventListener('touchcancel', () => {
+          if (touchTimer) {
+            clearTimeout(touchTimer);
+            touchTimer = null;
+          }
+        });
+      } else {
+        // Desktop: click to cast, Ctrl+click to level up
         btn.addEventListener('click', (e) => {
           if (e.ctrlKey || e.metaKey) {
             this.heroWrapper.abilitySystem.levelUpAbility(slot);
           } else {
-            // Cast ability
             this.mobaControls.triggerAbility(slot);
           }
         });
       }
+    }
+  }
+
+  setupRecenterButton() {
+    const btn = document.getElementById('recenter-btn');
+    if (btn && this.mobaCamera) {
+      const handler = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.mobaCamera.isLockedToHero = true;
+        this.mobaCamera.panOffset.set(0, 0, 0);
+      };
+      btn.addEventListener('touchstart', handler, { passive: false });
+      btn.addEventListener('click', handler);
     }
   }
 

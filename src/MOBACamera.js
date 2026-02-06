@@ -4,9 +4,9 @@ import * as THREE from 'three';
  * League of Legends-style isometric camera.
  * - Fixed angle looking down (~55 degrees from horizontal)
  * - Follows player hero by default
- * - Edge-of-screen panning (desktop) or drag panning (mobile)
+ * - Edge-of-screen panning (desktop) or two-finger drag (mobile)
  * - Spacebar to snap back to hero
- * - Mouse wheel zoom (limited range)
+ * - Mouse wheel / pinch zoom (limited range)
  */
 export class MOBACamera {
   constructor(hero) {
@@ -46,21 +46,31 @@ export class MOBACamera {
     this.mouseX = window.innerWidth / 2;
     this.mouseY = window.innerHeight / 2;
 
-    // Drag panning state
+    // Drag panning state (desktop middle-mouse)
     this.isDragging = false;
     this.dragStartX = 0;
     this.dragStartY = 0;
     this.dragStartPan = new THREE.Vector3();
 
+    // Touch state
+    this.touchPanActive = false;
+    this.touchPanStartX = 0;
+    this.touchPanStartY = 0;
+    this.touchPanStartOffset = new THREE.Vector3();
+    this.touchPinchStartDist = 0;
+    this.touchPinchStartZoom = 0;
+    this.touchCount = 0;
+
     // Reusable vectors
     this._desiredTarget = new THREE.Vector3();
     this._cameraOffset = new THREE.Vector3();
 
-    this.setupInputs();
+    this.setupDesktopInputs();
+    this.setupTouchInputs();
     this.updateCameraPosition(0);
   }
 
-  setupInputs() {
+  setupDesktopInputs() {
     // Mouse wheel for zoom
     window.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -108,30 +118,76 @@ export class MOBACamera {
         this.isDragging = false;
       }
     });
+  }
 
-    // Touch drag for mobile camera panning (two-finger)
-    let touchStartDist = 0;
-    let touchStartZoom = 0;
+  setupTouchInputs() {
+    // Two-finger: drag to pan, pinch to zoom
+    // These are on window so they also capture gestures that start on UI elements
+
+    const getTouchCenter = (t1, t2) => ({
+      x: (t1.clientX + t2.clientX) / 2,
+      y: (t1.clientY + t2.clientY) / 2,
+    });
+
+    const getTouchDist = (t1, t2) => {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
 
     window.addEventListener('touchstart', (e) => {
+      this.touchCount = e.touches.length;
+
       if (e.touches.length === 2) {
+        // Start two-finger pan + pinch
+        this.touchPanActive = true;
+        const center = getTouchCenter(e.touches[0], e.touches[1]);
+        this.touchPanStartX = center.x;
+        this.touchPanStartY = center.y;
+        this.touchPanStartOffset.copy(this.panOffset);
+        this.isLockedToHero = false;
+
         // Pinch zoom
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        touchStartDist = Math.sqrt(dx * dx + dy * dy);
-        touchStartZoom = this.targetZoom;
+        this.touchPinchStartDist = getTouchDist(e.touches[0], e.touches[1]);
+        this.touchPinchStartZoom = this.targetZoom;
       }
     }, { passive: true });
 
     window.addEventListener('touchmove', (e) => {
-      if (e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const scale = touchStartDist / dist;
-        this.targetZoom = Math.max(this.minZoom, Math.min(this.maxZoom, touchStartZoom * scale));
+      this.touchCount = e.touches.length;
+
+      if (e.touches.length === 2 && this.touchPanActive) {
+        // Two-finger drag pan
+        const center = getTouchCenter(e.touches[0], e.touches[1]);
+        const dx = (center.x - this.touchPanStartX) * 0.5;
+        const dy = (center.y - this.touchPanStartY) * 0.5;
+        this.panOffset.x = this.touchPanStartOffset.x - dx;
+        this.panOffset.z = this.touchPanStartOffset.z - dy;
+
+        // Pinch zoom
+        const dist = getTouchDist(e.touches[0], e.touches[1]);
+        if (this.touchPinchStartDist > 0) {
+          const scale = this.touchPinchStartDist / dist;
+          this.targetZoom = Math.max(
+            this.minZoom,
+            Math.min(this.maxZoom, this.touchPinchStartZoom * scale)
+          );
+        }
       }
     }, { passive: true });
+
+    window.addEventListener('touchend', (e) => {
+      this.touchCount = e.touches.length;
+
+      if (e.touches.length < 2) {
+        this.touchPanActive = false;
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchcancel', () => {
+      this.touchPanActive = false;
+      this.touchCount = 0;
+    });
   }
 
   update(delta) {
@@ -140,8 +196,8 @@ export class MOBACamera {
     // Zoom interpolation
     this.currentZoom += (this.targetZoom - this.currentZoom) * this.zoomSpeed * delta;
 
-    // Edge panning (desktop only)
-    if (!this.isDragging) {
+    // Edge panning (desktop only — skip if dragging or on touch)
+    if (!this.isDragging && !this.touchPanActive) {
       this.handleEdgePan(delta);
     }
 

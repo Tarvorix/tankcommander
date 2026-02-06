@@ -11,7 +11,9 @@ import * as THREE from 'three';
  * Mobile:
  * - Tap ground to move
  * - Tap enemy to attack
- * - Ability buttons on screen
+ * - Tap ability buttons to cast
+ * - Long-press ability buttons to level up
+ * - Two-finger drag for camera pan (handled in MOBACamera)
  */
 export class MOBAControls {
   constructor(hero, camera, renderer, scene) {
@@ -45,6 +47,9 @@ export class MOBAControls {
 
     // Keys held
     this._keys = {};
+
+    // Detect touch device
+    this.isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
     this.setupDesktopControls();
     this.setupMobileControls();
@@ -142,29 +147,78 @@ export class MOBAControls {
     let touchStartTime = 0;
     let touchStartX = 0;
     let touchStartY = 0;
+    let touchMoved = false;
+    let touchId = -1;
+    let fingerCount = 0;
 
+    // Use non-passive to allow preventDefault on iOS Safari
     canvas.addEventListener('touchstart', (e) => {
+      fingerCount = e.touches.length;
+
+      // Only track single-finger taps for movement
+      // Two-finger gestures are handled by MOBACamera for pan/zoom
       if (e.touches.length === 1) {
+        const touch = e.touches[0];
         touchStartTime = performance.now();
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        touchMoved = false;
+        touchId = touch.identifier;
+
+        // Prevent default to avoid 300ms click delay and browser gestures on iOS
+        e.preventDefault();
       }
-    }, { passive: true });
+    }, { passive: false });
 
-    canvas.addEventListener('touchend', (e) => {
-      const elapsed = performance.now() - touchStartTime;
-      if (elapsed < 300 && e.changedTouches.length === 1) {
-        const touch = e.changedTouches[0];
-        const dx = touch.clientX - touchStartX;
-        const dy = touch.clientY - touchStartY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+    canvas.addEventListener('touchmove', (e) => {
+      fingerCount = e.touches.length;
 
-        if (dist < 20) {
-          // Tap — treat as right-click (move/attack)
-          this.handleRightClick(touch.clientX, touch.clientY);
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        if (touch.identifier === touchId) {
+          const dx = touch.clientX - touchStartX;
+          const dy = touch.clientY - touchStartY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > 15) {
+            touchMoved = true;
+          }
         }
       }
-    }, { passive: true });
+
+      // Always prevent default on canvas to stop scrolling/rubber-banding
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+      if (touch.identifier !== touchId) return;
+
+      const elapsed = performance.now() - touchStartTime;
+
+      // Tap detection: quick single-finger touch without much movement
+      // fingerCount check ensures two-finger gestures that end one finger at a time
+      // don't accidentally trigger movement
+      if (elapsed < 400 && !touchMoved && fingerCount <= 1) {
+        // Treat tap as right-click (move to location / attack enemy)
+        this.handleRightClick(touch.clientX, touch.clientY);
+      }
+
+      touchId = -1;
+      fingerCount = e.touches.length;
+
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchcancel', () => {
+      touchId = -1;
+      fingerCount = 0;
+    });
+
+    // Prevent touch-hold context menu
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
   }
 
   setupKeyboard() {
