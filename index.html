@@ -132,8 +132,8 @@
     <div id="game-over-sub">Control Point Secured</div>
   </div>
 
-  <!-- Controls hint (top right, fades out) -->
-  <div id="controls-hint" class="game-ui">
+  <!-- Controls hint (top right, fades out) — desktop -->
+  <div id="controls-hint" class="game-ui controls-desktop">
     <div>Right-click: Move</div>
     <div>Right-click enemy: Attack</div>
     <div>Q/W/E/R: Abilities</div>
@@ -141,6 +141,18 @@
     <div>Space: Center camera</div>
     <div>Scroll: Zoom</div>
   </div>
+
+  <!-- Controls hint — mobile -->
+  <div id="controls-hint-mobile" class="game-ui controls-mobile">
+    <div>Tap: Move / Attack</div>
+    <div>Tap ability: Cast</div>
+    <div>Hold ability: Level up</div>
+    <div>2-finger drag: Pan camera</div>
+    <div>Pinch: Zoom</div>
+  </div>
+
+  <!-- Recenter camera button (mobile only) -->
+  <button id="recenter-btn" class="game-ui mobile-only-btn" type="button">CENTER</button>
 
   <script type="module" src="src/main.js"></script>
 </body>
