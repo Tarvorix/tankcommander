@@ -33,7 +33,13 @@ export class MOBAControls {
     // Path following
     this.currentPath = [];              // Array of THREE.Vector3 waypoints
     this.currentWaypointIndex = 0;      // Which waypoint we're heading to
-    this.waypointArrivalDist = 4;       // How close before moving to next waypoint
+    this.waypointArrivalDist = 5;       // How close before moving to next waypoint
+
+    // Stuck detection — if hero barely moves for 2s while moving, clear path
+    this._lastStuckPos = new THREE.Vector3();
+    this._stuckTimer = 0;
+    this._stuckThreshold = 2.0;         // seconds before declaring stuck
+    this._stuckMinDist = 1.0;           // minimum distance to not be stuck
 
     // Move indicator
     this.moveIndicator = null;
@@ -151,9 +157,9 @@ export class MOBAControls {
 
   setupMobileControls() {
     const canvas = this.renderer.domElement;
-    // The game container wraps the canvas
     const gameContainer = canvas.parentElement || canvas;
 
+    // ---- Touch state ----
     let touchStartTime = 0;
     let touchStartX = 0;
     let touchStartY = 0;
@@ -161,17 +167,18 @@ export class MOBAControls {
     let touchId = -1;
     let touchStartedOnGame = false;
     let wasTwoFingerGesture = false;
+    let cameraPanActive = false;
 
-    // Helper: check if a touch target is a game UI button (not the game world)
+    // Helper: check if a touch target is a UI overlay element
     const isUIElement = (target) => {
       if (!target) return false;
-      // Walk up DOM to see if touch started inside a UI overlay
       let el = target;
       while (el && el !== document.body) {
         if (el === canvas || el === gameContainer) return false;
         if (el.id === 'ability-bar' || el.id === 'minimap' ||
             el.id === 'recenter-btn' || el.id === 'game-over-overlay' ||
-            el.id === 'start-menu' || el.id === 'loading-overlay') {
+            el.id === 'start-menu' || el.id === 'loading-overlay' ||
+            el.classList.contains('ability-slot')) {
           return true;
         }
         el = el.parentElement;
@@ -179,19 +186,30 @@ export class MOBAControls {
       return false;
     };
 
-    // Listen on document to catch all touch events reliably on iOS Safari.
-    // All handlers are passive — CSS touch-action:none on * already prevents
-    // native browser gestures (scroll, zoom, 300ms delay). Calling
-    // preventDefault() on touchstart on iOS Safari can cancel the entire
-    // touch sequence and block the camera's two-finger pan/zoom listeners.
+    // Helper: get center point and distance between two touches
+    const getTouchCenter = (t1, t2) => ({
+      x: (t1.clientX + t2.clientX) / 2,
+      y: (t1.clientY + t2.clientY) / 2,
+    });
+    const getTouchDist = (t1, t2) => {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    // --- SINGLE TOUCH AUTHORITY ---
+    // MOBAControls owns all touch events. Camera has no touch listeners.
+    // Single-finger taps → move/attack. Two-finger gestures → camera pan/zoom.
+    // All listeners are passive — CSS touch-action:none prevents native gestures.
+
     document.addEventListener('touchstart', (e) => {
-      // Ignore touches on UI buttons
+      // Ignore UI elements (ability buttons, minimap, etc.)
       if (isUIElement(e.target)) {
         touchStartedOnGame = false;
         return;
       }
 
-      if (e.touches.length === 1) {
+      if (e.touches.length === 1 && !wasTwoFingerGesture) {
         // Single finger — track for potential tap-to-move
         const touch = e.touches[0];
         touchStartTime = performance.now();
@@ -200,29 +218,41 @@ export class MOBAControls {
         touchMoved = false;
         touchId = touch.identifier;
         touchStartedOnGame = true;
-        wasTwoFingerGesture = false;
-      } else if (e.touches.length >= 2) {
-        // Two-finger gesture starting — camera handles pan/zoom
+      }
+
+      if (e.touches.length >= 2) {
+        // Two-finger gesture → delegate to camera for pan/zoom
         wasTwoFingerGesture = true;
+        touchStartedOnGame = false;
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const center = getTouchCenter(t1, t2);
+        const dist = getTouchDist(t1, t2);
+        this.camera.startPanPinch(center.x, center.y, dist);
+        cameraPanActive = true;
       }
     }, { passive: true });
 
     document.addEventListener('touchmove', (e) => {
-      if (e.touches.length >= 2) {
-        // Two-finger gesture in progress — camera handles this
+      // Two-finger gesture → update camera pan/zoom
+      if (e.touches.length >= 2 && cameraPanActive) {
         wasTwoFingerGesture = true;
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const center = getTouchCenter(t1, t2);
+        const dist = getTouchDist(t1, t2);
+        this.camera.updatePanPinch(center.x, center.y, dist);
         return;
       }
 
+      // Single finger — track movement for tap vs drag detection
       if (!touchStartedOnGame) return;
-
       if (e.touches.length === 1) {
         const touch = e.touches[0];
         if (touch.identifier === touchId) {
           const dx = touch.clientX - touchStartX;
           const dy = touch.clientY - touchStartY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist > 15) {
+          if (Math.sqrt(dx * dx + dy * dy) > 15) {
             touchMoved = true;
           }
         }
@@ -230,7 +260,13 @@ export class MOBAControls {
     }, { passive: true });
 
     document.addEventListener('touchend', (e) => {
-      // If this was part of a two-finger gesture, don't treat as tap
+      // End camera pan/zoom when fingers lift
+      if (cameraPanActive && e.touches.length < 2) {
+        this.camera.endPanPinch();
+        cameraPanActive = false;
+      }
+
+      // If this was a two-finger gesture, don't treat as tap
       if (wasTwoFingerGesture) {
         if (e.touches.length === 0) {
           wasTwoFingerGesture = false;
@@ -248,9 +284,8 @@ export class MOBAControls {
 
       const elapsed = performance.now() - touchStartTime;
 
-      // Tap detection: quick single-finger touch without much movement
+      // Tap: quick single-finger touch without much movement
       if (elapsed < 400 && !touchMoved) {
-        // Treat tap as right-click (move to location / attack enemy)
         this.handleRightClick(touch.clientX, touch.clientY);
       }
 
@@ -259,12 +294,16 @@ export class MOBAControls {
     }, { passive: true });
 
     document.addEventListener('touchcancel', () => {
+      if (cameraPanActive) {
+        this.camera.endPanPinch();
+        cameraPanActive = false;
+      }
       touchId = -1;
       wasTwoFingerGesture = false;
       touchStartedOnGame = false;
     });
 
-    // Prevent touch-hold context menu on game area
+    // Prevent touch-hold context menu
     gameContainer.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
@@ -440,6 +479,29 @@ export class MOBAControls {
         }
         this.updateMoveIndicator(delta);
         return;
+      }
+    }
+
+    // Stuck detection — if hero barely moves while it has a move/attack target
+    if (this.moveTarget || this.attackTarget) {
+      const movedDist = heroPos.distanceTo(this._lastStuckPos);
+      if (movedDist < this._stuckMinDist) {
+        this._stuckTimer += delta;
+        if (this._stuckTimer > this._stuckThreshold) {
+          // Hero is stuck — cancel movement to stop glitching
+          this.moveTarget = null;
+          this.attackTarget = null;
+          this.currentPath = [];
+          this.currentWaypointIndex = 0;
+          this.hero.setMoveInput(0, 0);
+          this._stuckTimer = 0;
+          this._lastStuckPos.copy(heroPos);
+          this.updateMoveIndicator(delta);
+          return;
+        }
+      } else {
+        this._stuckTimer = 0;
+        this._lastStuckPos.copy(heroPos);
       }
     }
 

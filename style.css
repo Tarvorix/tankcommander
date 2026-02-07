@@ -11,11 +11,21 @@ body {
   overflow: hidden;
   background: #000;
   font-family: 'Rajdhani', sans-serif;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #game-container {
   width: 100vw;
   height: 100vh;
+  touch-action: none;
+}
+
+#game-container canvas {
+  touch-action: none;
+  -webkit-touch-callout: none;
 }
 
 /* Start Menu */
